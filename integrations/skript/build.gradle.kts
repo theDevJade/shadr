@@ -14,7 +14,7 @@ dependencies {
             file("../../platform-paper/build/libs/shadr-paper-$shadrVersion.jar"),
         ),
     )
-    compileOnly("io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper:paper-api:26.2.build.112-stable")
     compileOnly("com.github.SkriptLang:Skript:2.16.1") { isTransitive = false }
 }
 
