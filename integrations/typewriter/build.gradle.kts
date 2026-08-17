@@ -1,5 +1,5 @@
 plugins {
-    kotlin("jvm") version "2.2.10"
+    kotlin("jvm") version "2.4.10"
     id("com.typewritermc.module-plugin") version "2.0.0"
 }
 
