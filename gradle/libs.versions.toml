@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.0.21"
 paper = "1.21.8-R0.1-SNAPSHOT"
-kotlinx-serialization = "1.7.3"
+kotlinx-serialization = "1.11.0"
 snakeyaml = "2.2"
 # PlaceholderAPI is compileOnly and soft-depended on
 placeholderapi = "2.12.3"
