@@ -116,6 +116,7 @@ blocks:
             text: "Press me"
             font: shadr_semibold
             textAlign: left
+        hoverText: oooh hover
       - type: block_rounded
         id: card_close
         layer: 12.0
@@ -179,8 +180,8 @@ blocks:
     id: el_blur_1
     color: ffffff
     position:
-      x: 269
-      y: 288
+      x: 408
+      y: 289
     size:
       width: 1102
       height: 625

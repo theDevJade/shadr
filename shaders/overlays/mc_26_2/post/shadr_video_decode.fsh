@@ -40,7 +40,7 @@ int mosaic_pointer(ivec4 texel) {
     return (texel.g << 16) | (texel.b << 8) | texel.a;
 }
 
-/** Previous frame at a top-down coordinate, clamped so a motion vector may leave the frame. */
+
 ivec3 mosaic_previous(ivec2 size, int x, int y) {
     int cx = clamp(x, 0, size.x - 1);
     int cy = clamp(y, 0, size.y - 1);

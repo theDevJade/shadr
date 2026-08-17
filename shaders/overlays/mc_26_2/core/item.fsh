@@ -52,7 +52,7 @@ void main() {
         vec2 cell = floor(vec2(shadrRaw.rg) / 255.0 * float(SHADR_SHADER_GRID));
         vec2 uv = (cell + fract(shadrTexel)) / float(SHADR_SHADER_GRID);
 
-        fragColor = vec4(shadr_video_pack(clamp(uv, 0.0, 1.0)), 1.0);
+        fragColor = vec4(shadr_video_pack(clamp(uv, 0.0, 1.0), ivec2(gl_FragCoord.xy)), 1.0);
         return;
     }
 

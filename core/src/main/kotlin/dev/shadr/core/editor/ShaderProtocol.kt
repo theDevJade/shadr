@@ -123,6 +123,12 @@ data class ImageEntry(
 data class ImageList(val images: List<ImageEntry> = emptyList()) : EditorMessage
 
 @Serializable
+@SerialName("effects")
+data class EffectList(
+    val effects: List<dev.shadr.core.page.EffectDef> = emptyList(),
+) : EditorMessage
+
+@Serializable
 @SerialName("uploadImage")
 data class UploadImage(val name: String, val data: String) : EditorMessage
 

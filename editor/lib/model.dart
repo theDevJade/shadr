@@ -118,6 +118,9 @@ class EditorModel extends ChangeNotifier {
   List<ImageEntry> _images = const [];
   List<ImageEntry> get images => _images;
 
+  List<EffectEntry> _effects = const [];
+  List<EffectEntry> get effects => _effects;
+
   void uploadImage(String name, String base64Data) =>
       _send(wire.uploadImage(name, base64Data));
 
@@ -361,6 +364,11 @@ class EditorModel extends ChangeNotifier {
       case 'images':
         _images = ((json['images'] as List<dynamic>?) ?? const [])
             .map((e) => ImageEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+        notifyListeners();
+      case 'effects':
+        _effects = ((json['effects'] as List<dynamic>?) ?? const [])
+            .map((e) => EffectEntry.fromJson(e as Map<String, dynamic>))
             .toList();
         notifyListeners();
       case 'shaders':

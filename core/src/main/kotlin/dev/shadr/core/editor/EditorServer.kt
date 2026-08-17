@@ -39,6 +39,8 @@ class EditorServer(
             connection.send(encode(Welcome(documents = documents.list())))
             shaderList()?.let { connection.send(encode(it)) }
             images?.let { connection.send(encode(ImageList(it.list()))) }
+            documents.effects().takeIf { it.isNotEmpty() }
+                ?.let { connection.send(encode(EffectList(it))) }
         },
         onMessage = { connection, text -> handle(connection, text) },
         onClose = { releasePreviewIfUnattended() },
@@ -313,9 +315,7 @@ class EditorServer(
                 ),
             ),
         )
-        if (result.assignedPaths.isNotEmpty()) {
-            socket.broadcast(encode(active.snapshot(kind = ref.kind)))
-        }
+        socket.broadcast(encode(active.snapshot(kind = ref.kind)))
     }
 
     private fun open(connection: WebSocketServer.Connection, ref: DocumentRef) {
@@ -330,6 +330,8 @@ class EditorServer(
         session = opened
         openRef = ref
         connection.send(encode(opened.snapshot(kind = ref.kind)))
+        documents.effects().takeIf { it.isNotEmpty() }
+            ?.let { connection.send(encode(EffectList(it))) }
     }
 
     private inline fun withSession(

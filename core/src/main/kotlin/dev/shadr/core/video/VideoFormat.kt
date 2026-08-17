@@ -10,34 +10,31 @@ object VideoFormat {
 
     const val MARKER_ALPHA = 0xFA
 
-    /**
-     * Top [KEY_BITS] of red for a video pixel once it has landed in `minecraft:main`.
-     */
-    const val KEY = 0x2
+    const val KEY_BITS = 4
 
-    const val KEY_BITS = 2
-
-    const val UV_BITS = 11
+    const val UV_BITS = 10
 
     const val UV_MAX = (1 shl UV_BITS) - 1
 
-    const val UV_CONTINUITY = 64
+    const val UV_CONTINUITY = 16
 
-    fun pack(u: Double, v: Double): Triple<Int, Int, Int> {
+    fun key(pixelX: Int, pixelY: Int): Int = ((pixelX and 3) shl 2) or (pixelY and 3)
+
+    fun pack(u: Double, v: Double, pixelX: Int, pixelY: Int): Triple<Int, Int, Int> {
         val x = quantise(u)
         val y = quantise(v)
         return Triple(
-            (KEY shl 6) or (x shr 5),
-            ((x and 0x1F) shl 3) or (y shr 8),
+            (key(pixelX, pixelY) shl 4) or (x shr 6),
+            ((x and 0x3F) shl 2) or (y shr 8),
             y and 0xFF,
         )
     }
 
-    fun unpack(r: Int, g: Int, b: Int): Pair<Int, Int>? {
-        if ((r shr 6) != KEY) return null
+    fun unpack(r: Int, g: Int, b: Int, pixelX: Int, pixelY: Int): Pair<Int, Int>? {
+        if ((r shr 4) != key(pixelX, pixelY)) return null
         return Pair(
-            ((r and 0x3F) shl 5) or (g shr 3),
-            ((g and 0x07) shl 8) or b,
+            ((r and 0x0F) shl 6) or (g shr 2),
+            ((g and 0x03) shl 8) or b,
         )
     }
 

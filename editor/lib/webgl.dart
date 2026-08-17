@@ -7,7 +7,11 @@ import 'package:flutter/material.dart';
 import 'package:web/web.dart' as web;
 
 class ShaderDiagnostic {
-  const ShaderDiagnostic({required this.line, required this.message, this.isError = true});
+  const ShaderDiagnostic({
+    required this.line,
+    required this.message,
+    this.isError = true,
+  });
 
   final int line;
   final String message;
@@ -40,7 +44,8 @@ class ShaderPreviewController {
     _canvas.style
       ..width = '100%'
       ..height = '100%'
-      ..display = 'block';
+      ..display = 'block'
+      ..pointerEvents = 'none';
 
     _gl = _canvas.getContext('webgl2') as web.WebGL2RenderingContext?;
   }
@@ -52,6 +57,7 @@ class ShaderPreviewController {
   web.WebGLUniformLocation? _uResolution;
   web.WebGLUniformLocation? _uTime;
   web.WebGLUniformLocation? _uTint;
+  web.WebGLUniformLocation? _uOrbit;
 
   web.HTMLCanvasElement get element => _canvas;
   bool get available => _gl != null;
@@ -61,23 +67,39 @@ class ShaderPreviewController {
     if (gl == null) {
       return const CompileResult(
         ok: false,
-        diagnostics: [ShaderDiagnostic(line: 0, message: 'WebGL2 is not available in this browser')],
+        diagnostics: [
+          ShaderDiagnostic(
+            line: 0,
+            message: 'WebGL2 is not available in this browser',
+          ),
+        ],
       );
     }
 
-    final vertex = _compileStage(gl, web.WebGL2RenderingContext.VERTEX_SHADER, _vertexSource);
+    final vertex = _compileStage(
+      gl,
+      web.WebGL2RenderingContext.VERTEX_SHADER,
+      _vertexSource,
+    );
     if (vertex == null) {
       return const CompileResult(
         ok: false,
-        diagnostics: [ShaderDiagnostic(line: 0, message: 'internal: vertex stage failed')],
+        diagnostics: [
+          ShaderDiagnostic(line: 0, message: 'internal: vertex stage failed'),
+        ],
       );
     }
 
-    final fragment = gl.createShader(web.WebGL2RenderingContext.FRAGMENT_SHADER)!;
+    final fragment = gl.createShader(
+      web.WebGL2RenderingContext.FRAGMENT_SHADER,
+    )!;
     gl.shaderSource(fragment, fragmentSource);
     gl.compileShader(fragment);
 
-    final compiled = gl.getShaderParameter(fragment, web.WebGL2RenderingContext.COMPILE_STATUS);
+    final compiled = gl.getShaderParameter(
+      fragment,
+      web.WebGL2RenderingContext.COMPILE_STATUS,
+    );
     if (!(compiled.dartify() as bool? ?? false)) {
       final log = gl.getShaderInfoLog(fragment) ?? 'compilation failed';
       gl.deleteShader(fragment);
@@ -90,7 +112,10 @@ class ShaderPreviewController {
     gl.attachShader(program, fragment);
     gl.linkProgram(program);
 
-    final linked = gl.getProgramParameter(program, web.WebGL2RenderingContext.LINK_STATUS);
+    final linked = gl.getProgramParameter(
+      program,
+      web.WebGL2RenderingContext.LINK_STATUS,
+    );
     if (!(linked.dartify() as bool? ?? false)) {
       final log = gl.getProgramInfoLog(program) ?? 'link failed';
       gl.deleteProgram(program);
@@ -104,17 +129,25 @@ class ShaderPreviewController {
     _uResolution = gl.getUniformLocation(program, 'uResolution');
     _uTime = gl.getUniformLocation(program, 'uTime');
     _uTint = gl.getUniformLocation(program, 'uTint');
+    _uOrbit = gl.getUniformLocation(program, 'uOrbit');
 
     gl.deleteShader(fragment);
     gl.deleteShader(vertex);
     return CompileResult.clean;
   }
 
-  web.WebGLShader? _compileStage(web.WebGL2RenderingContext gl, int type, String source) {
+  web.WebGLShader? _compileStage(
+    web.WebGL2RenderingContext gl,
+    int type,
+    String source,
+  ) {
     final shader = gl.createShader(type)!;
     gl.shaderSource(shader, source);
     gl.compileShader(shader);
-    final ok = gl.getShaderParameter(shader, web.WebGL2RenderingContext.COMPILE_STATUS);
+    final ok = gl.getShaderParameter(
+      shader,
+      web.WebGL2RenderingContext.COMPILE_STATUS,
+    );
     if (!(ok.dartify() as bool? ?? false)) {
       gl.deleteShader(shader);
       return null;
@@ -122,7 +155,12 @@ class ShaderPreviewController {
     return shader;
   }
 
-  void render({required double time, required Color tint, required double opacity}) {
+  void render({
+    required double time,
+    required Color tint,
+    required double opacity,
+    Offset orbit = Offset.zero,
+  }) {
     final gl = _gl;
     final program = _program;
     if (gl == null || program == null) return;
@@ -134,8 +172,11 @@ class ShaderPreviewController {
     gl.clear(web.WebGL2RenderingContext.COLOR_BUFFER_BIT);
 
     gl.useProgram(program);
-    if (_uResolution != null) gl.uniform2f(_uResolution, width.toDouble(), height.toDouble());
+    if (_uResolution != null) {
+      gl.uniform2f(_uResolution, width.toDouble(), height.toDouble());
+    }
     if (_uTime != null) gl.uniform1f(_uTime, time);
+    if (_uOrbit != null) gl.uniform2f(_uOrbit, orbit.dx, orbit.dy);
     if (_uTint != null) {
       gl.uniform4f(
         _uTint,
@@ -181,11 +222,13 @@ class ShaderPreviewController {
         continue;
       }
       final reported = int.tryParse(match.group(2)!) ?? 0;
-      out.add(ShaderDiagnostic(
-        line: reported > lineOffset ? reported - lineOffset : 0,
-        message: match.group(3)!.trim(),
-        isError: match.group(1) == 'ERROR',
-      ));
+      out.add(
+        ShaderDiagnostic(
+          line: reported > lineOffset ? reported - lineOffset : 0,
+          message: match.group(3)!.trim(),
+          isError: match.group(1) == 'ERROR',
+        ),
+      );
     }
     return out.isEmpty ? [ShaderDiagnostic(line: 0, message: log.trim())] : out;
   }

@@ -601,6 +601,64 @@ class ImageEntry {
       );
 }
 
+class EffectEntry {
+  const EffectEntry({
+    required this.id,
+    required this.name,
+    this.moveX = 0,
+    this.moveY = 0,
+    this.scaleXPercent = 0,
+    this.scaleYPercent = 0,
+    this.opacityDelta = 0,
+    this.rotationDeg = 0,
+    this.durationMs = 250,
+    this.interpolation = '',
+  });
+
+  final String id;
+  final String name;
+  final double moveX;
+  final double moveY;
+  final double scaleXPercent;
+  final double scaleYPercent;
+  final int opacityDelta;
+  final double rotationDeg;
+  final int durationMs;
+  final String interpolation;
+
+  static EffectEntry fromJson(Map<String, dynamic> json) => EffectEntry(
+        id: json['id'] as String,
+        name: (json['name'] as String?) ?? (json['id'] as String),
+        moveX: (json['moveX'] as num?)?.toDouble() ?? 0,
+        moveY: (json['moveY'] as num?)?.toDouble() ?? 0,
+        scaleXPercent: (json['scaleXPercent'] as num?)?.toDouble() ?? 0,
+        scaleYPercent: (json['scaleYPercent'] as num?)?.toDouble() ?? 0,
+        opacityDelta: (json['opacityDelta'] as num?)?.toInt() ?? 0,
+        rotationDeg: (json['rotationDeg'] as num?)?.toDouble() ?? 0,
+        durationMs: (json['durationMs'] as num?)?.toInt() ?? 250,
+        interpolation: (json['interpolation'] as String?) ?? '',
+      );
+
+  String get summary {
+    final parts = <String>[];
+    if (moveX != 0 || moveY != 0) parts.add('moves ${_n(moveX)}, ${_n(moveY)}');
+    if (scaleXPercent != 0 || scaleYPercent != 0) {
+      parts.add(
+        scaleXPercent == scaleYPercent
+            ? 'scales ${_n(scaleXPercent)}%'
+            : 'scales ${_n(scaleXPercent)}%, ${_n(scaleYPercent)}%',
+      );
+    }
+    if (opacityDelta != 0) parts.add('fades ${opacityDelta > 0 ? '+' : ''}$opacityDelta');
+    if (rotationDeg != 0) parts.add('turns ${_n(rotationDeg)}°');
+    if (parts.isEmpty) parts.add('no visible change');
+    return '${parts.join(', ')} over ${durationMs}ms';
+  }
+
+  static String _n(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+}
+
 String uploadImage(String name, String base64Data) =>
     jsonEncode({'t': 'uploadImage', 'name': name, 'data': base64Data});
 

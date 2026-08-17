@@ -62,6 +62,15 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
     );
   }
 
+  List<SuggestOption> _effectOptions(EditorModel model) => [
+        for (final effect in model.effects)
+          (
+            value: effect.id,
+            label: effect.name == effect.id ? effect.id : '${effect.id} · ${effect.name}',
+            detail: effect.summary,
+          ),
+      ];
+
   List<Widget> _interaction(BuildContext context, EditorModel model, Element element) {
     final lock = model.lockReason(element.id);
     final editable = lock == null && !model.isPreviewing;
@@ -121,19 +130,23 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
           ),
           PropertyRow(
             label: 'Hover fx',
-            child: ValueField(
+            child: SuggestField(
               value: it.hoverEffect,
               enabled: editable,
-              hint: 'effect id',
+              hint: 'none',
+              options: _effectOptions(model),
+              emptyHint: 'no effects in effects/ yet',
               onCommit: (v) => set('interaction.hoverEffect', v),
             ),
           ),
           PropertyRow(
             label: 'Click fx',
-            child: ValueField(
+            child: SuggestField(
               value: it.clickEffect,
               enabled: editable,
-              hint: 'effect id',
+              hint: 'none',
+              options: _effectOptions(model),
+              emptyHint: 'no effects in effects/ yet',
               onCommit: (v) => set('interaction.clickEffect', v),
             ),
           ),
