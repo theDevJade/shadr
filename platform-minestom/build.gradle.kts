@@ -20,7 +20,7 @@ dependencies {
     // here by hand. Keep these in step with gradle/libs.versions.toml; a mismatch shows up as
     // a NoClassDefFoundError at runtime rather than at compile time, because the classes are
     // only reached when a @Serializable type is first initialised.
-    api("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
+    api("org.jetbrains.kotlin:kotlin-stdlib:2.4.10")
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     api("org.yaml:snakeyaml:2.2")
     api("net.kyori:adventure-text-minimessage:4.24.0")
