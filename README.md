@@ -52,10 +52,7 @@ Some of this codebase was generated and edited with local AI, mainly the tests. 
 
 ## Licence
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0 - see [LICENSE](LICENSE).
 
-One exception, and it matters if you fork this: the core shaders under `shaders/overlays/` that
-carry vanilla names are Mojang's, copied from the client with shadr's hook spliced in, and the
-Apache grant does not cover them. [NOTICE](NOTICE) says which files those are and what terms they
-come under. Shadr is not an official Minecraft product and is not approved by or associated with
-Mojang Studios.
+There are core shaders under `shaders/overlays/` that
+carry vanilla names are Mojang's, referenced from the client with shadr's hook spliced in. Shadr is not an official Minecraft product and is not approved by or associated with Mojang Studios.
