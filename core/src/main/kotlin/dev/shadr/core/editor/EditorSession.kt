@@ -275,6 +275,43 @@ class EditorSession(
                 outline = Rgb.parse(raw)?.let { (element.outline ?: Outline(1.0, it)).copy(color = it) }
                     ?: element.outline,
             )
+            "interaction.interactive" -> element.copy(
+                interaction = element.interaction.copy(
+                    interactive = raw.toBooleanStrictOrNull() ?: element.interaction.interactive,
+                ),
+            )
+            "interaction.disableHitbox" -> element.copy(
+                interaction = element.interaction.copy(
+                    disableHitbox = raw.toBooleanStrictOrNull() ?: element.interaction.disableHitbox,
+                ),
+            )
+            "interaction.hitboxOffsetX" -> number?.let {
+                element.copy(interaction = element.interaction.copy(hitboxOffsetX = it))
+            } ?: element
+            "interaction.hitboxOffsetY" -> number?.let {
+                element.copy(interaction = element.interaction.copy(hitboxOffsetY = it))
+            } ?: element
+            "interaction.hoverText" -> element.copy(
+                interaction = element.interaction.copy(hoverText = raw.ifBlank { null }),
+            )
+            "interaction.hoverEffect" -> element.copy(
+                interaction = element.interaction.copy(hoverEffect = raw.ifBlank { null }),
+            )
+            "interaction.clickEffect" -> element.copy(
+                interaction = element.interaction.copy(clickEffect = raw.ifBlank { null }),
+            )
+            "interaction.permission" -> element.copy(
+                interaction = element.interaction.copy(permission = raw.ifBlank { null }),
+            )
+            "interaction.onClick" -> element.copy(
+                interaction = element.interaction.copy(onClick = parseActions(raw)),
+            )
+            "interaction.onLeftClick" -> element.copy(
+                interaction = element.interaction.copy(onLeftClick = parseActions(raw)),
+            )
+            "interaction.onRightClick" -> element.copy(
+                interaction = element.interaction.copy(onRightClick = parseActions(raw)),
+            )
             else -> element
         }
     }
@@ -285,6 +322,16 @@ class EditorSession(
         "center", "centre", "middle" -> HudAlignment.CENTER
         else -> null
     }
+
+    private fun parseActions(raw: String): List<dev.shadr.core.page.ActionSpec> =
+        raw.lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .map { line ->
+                val verb = line.substringBefore(' ').trim()
+                dev.shadr.core.page.ActionSpec(verb, line.removePrefix(verb).trim())
+            }
+            .filter { it.verb.isNotEmpty() }
 
     private fun parseTextAlignment(raw: String) = when (raw.trim().lowercase()) {
         "left" -> TextAlignment.LEFT

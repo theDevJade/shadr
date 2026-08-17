@@ -5,6 +5,7 @@
 #moj_import <minecraft:globals.glsl>
 #moj_import <hud_fragment.glsl>
 #moj_import <hud_shape.glsl>
+#moj_import <shadr_video.glsl>
 #moj_import <shadr_shaders.glsl>
 
 uniform sampler2D Sampler0;
@@ -38,13 +39,21 @@ void main() {
     ivec2 shadrCoord = ivec2(floor(shadrTexel));
     ivec4 shadrRaw = ivec4(round(texelFetch(Sampler0, shadrCoord, 0) * 255.0));
 
-    if (shadrRaw.a == SHADR_POSITION_ALPHA) {
+    if (shadrRaw.a == SHADR_POSITION_ALPHA || shadrRaw.a == SHADR_VIDEO_MARKER_ALPHA) {
         ivec4 sig = ivec4(round(
             texelFetch(Sampler0, shadrCoord + ivec2(0, SHADR_SHADER_GRID), 0) * 255.0));
         if (sig.r != SHADR_MARKER_R || sig.g != SHADR_MARKER_G
             || sig.a != SHADR_MARKER_A || sig.b != shadrRaw.b) {
             shadrRaw.a = 0;
         }
+    }
+
+    if (shadrRaw.a == SHADR_VIDEO_MARKER_ALPHA) {
+        vec2 cell = floor(vec2(shadrRaw.rg) / 255.0 * float(SHADR_SHADER_GRID));
+        vec2 uv = (cell + fract(shadrTexel)) / float(SHADR_SHADER_GRID);
+
+        fragColor = vec4(shadr_video_pack(clamp(uv, 0.0, 1.0), ivec2(gl_FragCoord.xy)), 1.0);
+        return;
     }
 
     if (shadrRaw.a == SHADR_POSITION_ALPHA) {

@@ -144,6 +144,10 @@ public final class MinestomHudSink implements HudSink {
         final Material material = id == null ? null : Material.fromKey(id);
         if (material != null) {
             ItemStack.Builder stack = ItemStack.builder(material);
+            final String model = draw.getItemModel();
+            if (model != null) {
+                stack = stack.set(DataComponents.ITEM_MODEL, model);
+            }
             final Integer bucket = draw.getItemCustomModelData();
             if (bucket != null) {
                 stack = stack.set(DataComponents.CUSTOM_MODEL_DATA,

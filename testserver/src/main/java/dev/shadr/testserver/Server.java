@@ -55,7 +55,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public final class Server {
-
     private static final int MC_PORT = 25565;
     private static final int HTTP_PORT = 25566;
     private static final Path PACK_DIR = Path.of("out", "pack");
@@ -88,6 +87,9 @@ public final class Server {
     private static volatile String packUrl;
 
     private static final Object PACK_LOCK = new Object();
+
+    private static volatile dev.shadr.pack.UiImageAtlas.BuildResult lastAtlas =
+            new dev.shadr.pack.UiImageAtlas.BuildResult(java.util.Map.of(), java.util.List.of());
 
     public static void main(String[] args) throws Exception {
         loadPage();
@@ -144,8 +146,56 @@ public final class Server {
         startEditor();
 
         server.start("0.0.0.0", MC_PORT);
+        final java.util.concurrent.atomic.AtomicLong audioTick =
+                new java.util.concurrent.atomic.AtomicLong();
+        MinecraftServer.getSchedulerManager()
+                .buildTask(() -> tickAudio(audioTick.getAndIncrement()))
+                .repeat(TaskSchedule.tick(1))
+                .schedule();
+
         System.out.println("[shadr] server up on :" + MC_PORT + ". Join with 26.2.");
     }
+
+    private static final java.util.Map<String, java.util.Map<String, Long>> AUDIO_DUE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static java.util.List<dev.shadr.core.video.VideoAudio.Track> audioTracks() {
+        return dev.shadr.core.video.VideoAudio.INSTANCE.tracksOf(demoPage, id -> {
+            for (dev.shadr.pack.VideoAssets.Source source : videoSources()) {
+                if (source.getClip().getId().equals(id) && source.getAudio() != null) {
+                    return source.getClip();
+                }
+            }
+            return null;
+        });
+    }
+
+    private static void tickAudio(long tick) {
+        final java.util.List<dev.shadr.core.video.VideoAudio.Track> tracks = audioTracks();
+        if (tracks.isEmpty()) return;
+
+        for (String uuid : sessions.keySet()) {
+            final PlayerId id = new PlayerId(uuid);
+            final kotlin.Pair<java.util.List<dev.shadr.core.video.VideoAudio.Track>,
+                    java.util.Map<String, Long>> step =
+                    dev.shadr.core.video.VideoAudio.INSTANCE.step(
+                            tracks, tick, AUDIO_DUE.getOrDefault(uuid, java.util.Map.of()));
+
+            for (dev.shadr.core.video.VideoAudio.Track track : step.getFirst()) {
+                AUDIO_HOST.playSound(id, track.getSound(), 1.0);
+            }
+            AUDIO_DUE.put(uuid, step.getSecond());
+        }
+    }
+
+    private static void stopAudio(PlayerId id) {
+        AUDIO_DUE.remove(id.getUuid());
+        for (dev.shadr.core.video.VideoAudio.Track track : audioTracks()) {
+            AUDIO_HOST.stopSound(id, track.getSound());
+        }
+    }
+
+    private static final LoggingActionHost AUDIO_HOST = new LoggingActionHost();
 
     private static void openUi(Player player) {
         final PlayerId id = new PlayerId(player.getUuid().toString());
@@ -174,6 +224,7 @@ public final class Server {
     private static void closeUi(Player player) {
         final PlayerId id = new PlayerId(player.getUuid().toString());
         sessions.remove(id.getUuid());
+        stopAudio(id);
         bridge.forget(id);
     }
 
@@ -287,11 +338,17 @@ public final class Server {
                 ENVIRONMENT,
                 new EnvironmentSource(REPO_ROOT.resolve("shaders").toFile()),
                 Server::rebuildPack,
+                new dev.shadr.pack.AtlasImageSource(
+                        REPO_ROOT.resolve("assets/shadr/contents").toFile(),
+                        () -> lastAtlas),
                 line -> {
                     System.out.println("[shadr] " + line);
                     return kotlin.Unit.INSTANCE;
                 });
     }
+
+    private static final String PAGE_NAME =
+            System.getenv().getOrDefault("SHADR_PAGE", "demo");
 
     private static void loadPage() {
         final PageLoader loader = new PageLoader(
@@ -300,12 +357,16 @@ public final class Server {
                 REPO_ROOT.resolve("protocol/effects").toFile());
         effects = loader.loadEffects();
         demoPage = loader.loadPage(
-                REPO_ROOT.resolve("protocol/pages/demo.yml").toFile(),
+                REPO_ROOT.resolve("protocol/pages/" + PAGE_NAME + ".yml").toFile(),
                 loader.loadComponents());
         loader.getIssues().forEach(issue -> System.out.println("[shadr] page issue: " + issue));
-        if (demoPage == null) throw new IllegalStateException("protocol/pages/demo.yml did not load");
+        if (demoPage == null) {
+            throw new IllegalStateException(
+                    "protocol/pages/" + PAGE_NAME + ".yml did not load");
+        }
         renderer = new PageRenderer();
-        System.out.println("[shadr] demo page: " + demoPage.getElements().size() + " element(s)");
+        System.out.println("[shadr] page '" + PAGE_NAME + "': "
+                + demoPage.getElements().size() + " element(s)");
     }
 
     private static final class LoggingActionHost implements dev.shadr.core.action.ActionHost {
@@ -321,6 +382,13 @@ public final class Server {
                     .volume((float) volume)
                     .pitch(1f)
                     .build());
+        }
+        @Override public void stopSound(PlayerId player, String sound) {
+            final Player target = MinecraftServer.getConnectionManager()
+                    .getOnlinePlayerByUuid(UUID.fromString(player.getUuid()));
+            if (target == null) return;
+            target.stopSound(net.kyori.adventure.sound.SoundStop.named(
+                    net.kyori.adventure.key.Key.key(sound.toLowerCase())));
         }
         @Override public void closePage(PlayerId player) {
             final Player target = MinecraftServer.getConnectionManager()
@@ -397,6 +465,40 @@ public final class Server {
         bridge.pack().send(player, packUrl, hexToBytes(packSha1), true);
     }
 
+    private static java.util.List<dev.shadr.pack.VideoAssets.Source> VIDEO_CACHE =
+            java.util.List.of();
+
+    private static String videoCacheKey = null;
+
+    private static java.util.List<dev.shadr.pack.VideoAssets.Source> videoSources() {
+        final java.io.File contents = REPO_ROOT.resolve("contents").toFile();
+        final java.io.File dir = new java.io.File(contents, dev.shadr.pack.VideoLibrary.FOLDER);
+
+        final StringBuilder key = new StringBuilder();
+        final java.io.File[] entries = dir.listFiles();
+        if (entries != null) {
+            java.util.Arrays.sort(entries, java.util.Comparator.comparing(java.io.File::getName));
+            for (java.io.File file : entries) {
+                key.append(file.getName()).append(':')
+                        .append(file.length()).append(':')
+                        .append(file.lastModified()).append(';');
+            }
+        }
+        if (key.toString().equals(videoCacheKey)) {
+            return VIDEO_CACHE;
+        }
+
+        final dev.shadr.pack.VideoLibrary.Result result =
+                new dev.shadr.pack.VideoLibrary(contents, new dev.shadr.pack.VideoImport(), 30.0, 3.0)
+                        .load();
+        for (String issue : result.getIssues()) {
+            System.out.println("[shadr] video: " + issue);
+        }
+        videoCacheKey = key.toString();
+        VIDEO_CACHE = result.getSources();
+        return VIDEO_CACHE;
+    }
+
     private static boolean rebuildPack() {
         synchronized (PACK_LOCK) {
             try {
@@ -406,8 +508,14 @@ public final class Server {
                         REPO_ROOT.resolve("assets/shadr/sounds").toFile(),
                         false,
                         SHADERS.load(),
-                        ENVIRONMENT.all())
+                        ENVIRONMENT.all(),
+                        videoSources())
                         .build(PACK_DIR.toFile(), true);
+                lastAtlas = new dev.shadr.pack.UiImageAtlas(
+                        REPO_ROOT.resolve("assets/shadr/contents").toFile(),
+                        PACK_DIR.toFile(),
+                        Path.of("out", "uiimages_codepoints.properties").toFile())
+                        .rebuild();
                 publishPack(zipDirContents(PACK_DIR));
             } catch (Exception failure) {
                 System.out.println("[shadr] pack rebuild failed: " + failure);

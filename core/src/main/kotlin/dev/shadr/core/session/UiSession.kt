@@ -19,6 +19,7 @@ import dev.shadr.core.page.Element
 import dev.shadr.core.page.Interaction
 import dev.shadr.core.page.Page
 import dev.shadr.core.text.Glyphs
+import kotlin.math.max
 
 class UiSession @JvmOverloads constructor(
     val player: PlayerId,
@@ -117,7 +118,28 @@ class UiSession @JvmOverloads constructor(
             }
             if (ticks == null) draw else draw.copy(interpolationDuration = ticks)
         }
-        return draws + cursorDraw()
+        return draws + hoverTextDraw() + cursorDraw()
+    }
+
+    private fun hoverTextDraw(): List<HudDraw> {
+        val id = hoveredId ?: return emptyList()
+        val element = page.elements.firstOrNull { it.id == id } ?: return emptyList()
+        val raw = element.interaction.hoverText?.takeIf { it.isNotBlank() } ?: return emptyList()
+
+        val text = dev.shadr.core.page.PlaceholderScanner.apply(raw, player, placeholders)
+        val screen = page.screen
+        val margin = HOVER_TEXT_SIZE
+        val tooltip = Element(
+            id = HOVER_TEXT_ELEMENT_ID,
+            type = dev.shadr.core.page.ElementType.TEXT,
+            x = cursor.x.coerceIn(margin, max(margin, screen.width - margin)),
+            y = (cursor.y + screen.cursorSize).coerceAtMost(screen.height - HOVER_TEXT_SIZE),
+            width = HOVER_TEXT_SIZE,
+            height = HOVER_TEXT_SIZE,
+            layer = screen.cursorLayer - 1.0,
+            text = text,
+        )
+        return renderer.render(page.copy(elements = listOf(tooltip))).draws
     }
 
     private fun effectTicks(elementId: String?, pick: (Interaction) -> String?): Int? {
@@ -223,5 +245,7 @@ class UiSession @JvmOverloads constructor(
 
     companion object {
         const val CURSOR_ELEMENT_ID = "__shadr_cursor"
+        const val HOVER_TEXT_ELEMENT_ID = "__shadr_hover_text"
+        const val HOVER_TEXT_SIZE = 48.0
     }
 }

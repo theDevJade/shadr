@@ -36,6 +36,7 @@ import java.io.File
 
 class ShadrPlugin : JavaPlugin() {
     private lateinit var config: ShadrConfig
+    private lateinit var lang: dev.shadr.core.config.Lang
     private lateinit var bridge: PaperBridge
     private lateinit var renderer: PageRenderer
     private lateinit var actionRunner: ActionRunner
@@ -69,10 +70,14 @@ class ShadrPlugin : JavaPlugin() {
     override fun onEnable() {
         saveDefaultDirectories()
         config = ShadrConfig.load(File(dataFolder, "config.yml"))
+        lang = loadLang()
 
         bridge = PaperBridge(
             this,
-            frostedGlass = { environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS) },
+            postEffects = {
+                environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS) ||
+                    environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.VIDEO)
+            },
         )
         server.pluginManager.registerEvents(bridge, this)
 
@@ -92,6 +97,13 @@ class ShadrPlugin : JavaPlugin() {
         wireInput()
         startEditor()
         startUpdates()
+
+        server.servicesManager.register(
+            dev.shadr.core.api.ShadrApi::class.java,
+            PaperShadrApi(this),
+            this,
+            org.bukkit.plugin.ServicePriority.Normal,
+        )
 
         server.scheduler.runTaskTimer(this, Runnable { tick() }, 1L, 1L)
         detectPlaceholderApi()
@@ -121,6 +133,7 @@ class ShadrPlugin : JavaPlugin() {
                 ),
                 onPageChanged = ::applyEditedPage,
                 onShadersChanged = ::rebuildPackForShaders,
+                images = dev.shadr.pack.AtlasImageSource(File(dataFolder, "contents")) { lastAtlas },
                 log = { logger.info("shadr: $it") },
             )
         }.getOrElse {
@@ -169,6 +182,30 @@ class ShadrPlugin : JavaPlugin() {
 
     private val packBuildLock = Any()
 
+    @Volatile
+    private var lastAtlas = UiImageAtlas.BuildResult(emptyMap(), emptyList())
+
+    private var videoCacheKey: String? = null
+
+    @Volatile
+    private var videoCache: List<dev.shadr.pack.VideoAssets.Source> = emptyList()
+
+    private fun videoSources(): List<dev.shadr.pack.VideoAssets.Source> {
+        val dir = File(File(dataFolder, "contents"), dev.shadr.pack.VideoLibrary.FOLDER)
+        val key = dir.walkTopDown()
+            .filter { it.isFile }
+            .sortedBy { it.path }
+            .joinToString(";") { "${it.path}:${it.length()}:${it.lastModified()}" }
+
+        if (key == videoCacheKey) return videoCache
+
+        val result = dev.shadr.pack.VideoLibrary(File(dataFolder, "contents")).load()
+        result.issues.forEach { logger.warning("video: $it") }
+        videoCacheKey = key
+        videoCache = result.sources
+        return result.sources
+    }
+
     private fun rebuildPack() = synchronized(packBuildLock) {
         val packRoot = File(dataFolder, "resourcepack/pack")
         PackGenerator(
@@ -179,6 +216,7 @@ class ShadrPlugin : JavaPlugin() {
                 shaderLoader.issues.forEach { logger.warning("shader: $it") }
             },
             environment = environment.all(),
+            videos = videoSources(),
         ).build(packRoot)
 
         val atlas = UiImageAtlas(
@@ -187,6 +225,7 @@ class ShadrPlugin : JavaPlugin() {
             stateFile = File(dataFolder, "resourcepack/generated/uiimages_codepoints.properties"),
         ).rebuild()
         atlas.issues.forEach { logger.warning("image atlas: $it") }
+        lastAtlas = atlas
 
         archive = PackBuilder.build(
             packRoot = packRoot,
@@ -195,7 +234,41 @@ class ShadrPlugin : JavaPlugin() {
             compressImages = config.pack.compressImages,
         )
         packUrl = startHosting()
+
+        config.pack.mergeInto?.takeIf { it.isNotBlank() }?.let { destination ->
+            val target = File(destination).let { if (it.isAbsolute) it else File(dataFolder, destination) }
+            val written = PackMerge.copy(packRoot, target)
+            logger.info("shadr: merged $written pack file(s) into ${target.path}")
+        }
+        packListeners.forEach { runCatching { it(packRoot) } }
     }
+
+    private val packListeners = java.util.concurrent.CopyOnWriteArrayList<(File) -> Unit>()
+
+    fun onPackBuilt(listener: (File) -> Unit) {
+        packListeners += listener
+    }
+
+    fun packRoot(): File = File(dataFolder, "resourcepack/pack")
+
+    fun packArchive(): PackArchive? = archive
+
+    fun packUrlOrNull(): String? = packUrl
+
+    fun packSendsToPlayers(): Boolean = config.pack.hosting.sends
+
+    fun pageNames(): Set<String> = pages.keys.toSet()
+
+    fun hasPageOpen(player: PlayerId): Boolean = sessions.containsKey(player.uuid)
+
+    fun openPageIfPresent(player: PlayerId, page: String, replacing: Boolean): Boolean {
+        if (!pages.containsKey(page)) return false
+        openPage(player, page, replacing)
+        return true
+    }
+
+    fun registerAction(verb: String, handler: dev.shadr.core.api.ActionHandler): Boolean =
+        actionRunner.register(verb, handler)
 
     fun reload() {
         rebuildPack()
@@ -214,7 +287,7 @@ class ShadrPlugin : JavaPlugin() {
     private fun startHosting(): String? {
         val built = archive ?: return null
         return when (config.pack.hosting) {
-            HostingMode.EXTERNAL_PACK -> null
+            HostingMode.MERGE_ONLY, HostingMode.EXTERNAL_PACK -> null
             HostingMode.EXTERNAL_HOST -> config.pack.externalUrl
             HostingMode.SELF_HOST -> packHost.serve(
                 built, BIND_ALL, config.pack.selfHostPort, config.pack.selfHostIp,
@@ -354,37 +427,41 @@ class ShadrPlugin : JavaPlugin() {
         when (args.firstOrNull()?.lowercase()) {
             "reload" -> {
                 reload()
-                sender.sendMessage("shadr: reloaded ${pages.size} page(s)")
+                say(sender, "reloaded", "pages" to pages.size)
             }
             "open" -> {
-                val player = sender as? Player ?: return reply(sender, "players only")
+                val player = sender as? Player ?: return say(sender, "players-only")
                 val name = args.getOrNull(1) ?: return reply(sender, "usage: /shadr open <page>")
                 openPage(PlayerId(player.uniqueId.toString()), name)
             }
             "close" -> {
-                val player = sender as? Player ?: return reply(sender, "players only")
+                val player = sender as? Player ?: return say(sender, "players-only")
                 closePage(PlayerId(player.uniqueId.toString()))
             }
             "pack" -> {
-                val player = sender as? Player ?: return reply(sender, "players only")
+                val player = sender as? Player ?: return say(sender, "players-only")
+                if (!config.pack.hosting.sends) {
+                    return say(sender, "pack-not-sent", "mode" to config.pack.hosting.name.lowercase())
+                }
                 sendPack(PlayerId(player.uniqueId.toString()))
+                say(sender, "pack-sent")
             }
-            "pages" -> sender.sendMessage("shadr pages: " + pages.keys.sorted().joinToString(", "))
+            "pages" -> say(sender, "pages", "pages" to pages.keys.sorted().joinToString(", "))
             "editor" -> return editorCommand(sender, args.getOrNull(1)?.lowercase())
             "shader" -> return shaderCommand(sender, args.drop(1))
             "update" -> {
                 val service = updates
-                    ?: return reply(sender, "update checks are disabled in config.yml (updates.check)")
+                    ?: return say(sender, "update-disabled")
                 return service.command(sender, args.getOrNull(1)?.lowercase())
             }
-            else -> sender.sendMessage("usage: /shadr <open|close|reload|pack|pages|shader|editor|update>")
+            else -> say(sender, "usage")
         }
         return true
     }
 
     private fun shaderCommand(sender: CommandSender, args: List<String>): Boolean {
         if (!sender.hasPermission(SHADER_PERMISSION)) {
-            return reply(sender, "you do not have $SHADER_PERMISSION")
+            return say(sender, "no-permission", "permission" to SHADER_PERMISSION)
         }
 
         val api = shaderApi
@@ -435,19 +512,19 @@ class ShadrPlugin : JavaPlugin() {
 
     private fun editorCommand(sender: CommandSender, sub: String?): Boolean {
         val running = editor
-            ?: return reply(sender, "editor is disabled; set editor.web.enabled in config.yml")
+            ?: return say(sender, "editor-disabled")
 
         if (!sender.hasPermission(EDITOR_PERMISSION)) {
-            return reply(sender, "you do not have $EDITOR_PERMISSION")
+            return say(sender, "no-permission", "permission" to EDITOR_PERMISSION)
         }
 
         when (sub) {
             "revoke" -> {
                 val dropped = running.revokeIssued()
-                return reply(sender, "revoked $dropped issued link(s); bookmarked operator URLs still work")
+                return say(sender, "editor-revoked", "count" to dropped)
             }
             null, "link" -> Unit
-            else -> return reply(sender, "usage: /shadr editor [link|revoke]")
+            else -> return say(sender, "editor-usage")
         }
 
         val label = (sender as? Player)?.uniqueId?.toString() ?: "console"
@@ -457,7 +534,7 @@ class ShadrPlugin : JavaPlugin() {
             server.ip.ifBlank { config.editor.web.bind }
         }
         val url = running.mintUrl(label, LINK_TTL_MILLIS, host)
-            ?: return reply(sender, "editor is running without authentication: ${running.url(host)}")
+            ?: return say(sender, "editor-unauthenticated", "url" to running.url(host))
 
         val minutes = LINK_TTL_MILLIS / 60_000
         if (sender is Player) {
@@ -477,8 +554,22 @@ class ShadrPlugin : JavaPlugin() {
     }
 
     private fun reply(sender: CommandSender, message: String): Boolean {
-        sender.sendMessage("shadr: $message")
+        sender.sendMessage(lang["prefix"] + message)
         return true
+    }
+
+    private fun say(sender: CommandSender, key: String, vararg placeholders: Pair<String, Any?>) =
+        reply(sender, lang.get(key, *placeholders))
+
+    private fun loadLang(): dev.shadr.core.config.Lang {
+        val file = File(dataFolder, "lang.yml")
+        if (!file.isFile) {
+            runCatching {
+                dataFolder.mkdirs()
+                file.writeText(dev.shadr.core.config.Lang.defaultsYaml())
+            }.onFailure { logger.warning("shadr: could not write lang.yml (${it.message})") }
+        }
+        return dev.shadr.core.config.Lang.load(file)
     }
 
     private fun saveDefaultDirectories() {

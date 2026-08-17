@@ -31,15 +31,15 @@ public final class MinestomCamera implements CameraControl {
     private final Map<String, Seat> seats = new HashMap<>();
     private final MinestomPlayers players;
 
-    private final BooleanSupplier frostedGlass;
+    private final BooleanSupplier postEffects;
 
     public MinestomCamera(MinestomPlayers players) {
         this(players, () -> false);
     }
 
-    public MinestomCamera(MinestomPlayers players, BooleanSupplier frostedGlass) {
+    public MinestomCamera(MinestomPlayers players, BooleanSupplier postEffects) {
         this.players = players;
-        this.frostedGlass = frostedGlass;
+        this.postEffects = postEffects;
     }
 
     @Override
@@ -68,7 +68,7 @@ public final class MinestomCamera implements CameraControl {
         final Pos base = entity.getPosition().withView(0f, 0f);
         final Pos eye = base.add(0, entity.getEyeHeight(), 0);
 
-        final Entity camera = new Entity(frostedGlass.getAsBoolean() ? EntityType.CREEPER : EntityType.TEXT_DISPLAY);
+        final Entity camera = new Entity(postEffects.getAsBoolean() ? EntityType.CREEPER : EntityType.TEXT_DISPLAY);
         camera.setNoGravity(true);
         camera.setInvisible(true);
         final Entity mount = new Entity(EntityType.TEXT_DISPLAY);

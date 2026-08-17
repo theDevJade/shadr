@@ -98,6 +98,305 @@ class _ValueFieldState extends State<ValueField> {
       );
 }
 
+typedef SuggestOption = ({String value, String label, String detail});
+
+class SuggestField extends StatefulWidget {
+  const SuggestField({
+    super.key,
+    required this.value,
+    required this.onCommit,
+    required this.options,
+    this.enabled = true,
+    this.hint,
+    this.emptyHint,
+  });
+
+  final String value;
+  final ValueChanged<String> onCommit;
+  final List<SuggestOption> options;
+  final bool enabled;
+  final String? hint;
+  final String? emptyHint;
+
+  @override
+  State<SuggestField> createState() => _SuggestFieldState();
+}
+
+class _SuggestFieldState extends State<SuggestField> {
+  late final TextEditingController _controller = TextEditingController(text: widget.value);
+  late final FocusNode _focus = FocusNode()..addListener(_onFocusChange);
+
+  @override
+  void didUpdateWidget(SuggestField old) {
+    super.didUpdateWidget(old);
+    if (!_focus.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  void _onFocusChange() {
+    if (_focus.hasFocus) {
+      _controller.selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: _controller.text.length,
+      );
+    } else {
+      _commit();
+    }
+    setState(() {});
+  }
+
+  void _commit() {
+    if (_controller.text != widget.value) widget.onCommit(_controller.text);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Iterable<SuggestOption> _matching(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return widget.options;
+    return widget.options.where(
+      (o) => o.value.toLowerCase().contains(q) || o.label.toLowerCase().contains(q),
+    );
+  }
+
+  SuggestOption? get _selected {
+    for (final option in widget.options) {
+      if (option.value == widget.value) return option;
+    }
+    return null;
+  }
+
+  String? get _note {
+    if (widget.options.isEmpty) return widget.emptyHint;
+    if (widget.value.trim().isEmpty) return null;
+    final match = _selected;
+    if (match != null) return match.detail;
+    return 'no effect called "${widget.value}"';
+  }
+
+  bool get _unknown =>
+      widget.options.isNotEmpty &&
+      widget.value.trim().isNotEmpty &&
+      _selected == null;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    final note = _note;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        RawAutocomplete<SuggestOption>(
+          textEditingController: _controller,
+          focusNode: _focus,
+          optionsBuilder: (value) => widget.enabled ? _matching(value.text) : const [],
+          displayStringForOption: (option) => option.value,
+          onSelected: (option) {
+            _controller.text = option.value;
+            _commit();
+          },
+          fieldViewBuilder: (context, controller, focusNode, onSubmit) => SizedBox(
+            height: Metrics.fieldHeight,
+            child: TextField(
+              controller: controller,
+              focusNode: focusNode,
+              enabled: widget.enabled,
+              onSubmitted: (_) {
+                onSubmit();
+                _commit();
+              },
+              style: context.texts.bodyMedium,
+              cursorWidth: 1,
+              cursorColor: tokens.accent,
+              decoration: InputDecoration(
+                hintText: widget.hint,
+                hintStyle: context.texts.bodySmall?.copyWith(color: tokens.textTertiary),
+                isDense: true,
+                filled: true,
+                fillColor: widget.enabled ? tokens.surfaceSunken : tokens.surface,
+                contentPadding: const EdgeInsets.only(left: Insets.sm, right: Insets.sm),
+                suffixIcon: Icon(
+                  Icons.expand_more,
+                  size: 14,
+                  color: _unknown ? tokens.attention : tokens.textTertiary,
+                ),
+                suffixIconConstraints: const BoxConstraints(minWidth: 20, minHeight: 0),
+                border: _suggestBorder(tokens.border),
+                enabledBorder: _suggestBorder(_unknown ? tokens.attention : tokens.border),
+                focusedBorder: _suggestBorder(tokens.accent),
+                disabledBorder: _suggestBorder(tokens.border),
+              ),
+            ),
+          ),
+          optionsViewBuilder: (context, onSelected, options) => Align(
+            alignment: Alignment.topLeft,
+            child: _SuggestMenu(options: options.toList(), onSelected: onSelected),
+          ),
+        ),
+        if (note != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Text(
+              note,
+              style: context.texts.bodySmall?.copyWith(
+                color: _unknown ? tokens.attention : tokens.textTertiary,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  OutlineInputBorder _suggestBorder(Color color) => OutlineInputBorder(
+        borderRadius: Corners.small,
+        borderSide: BorderSide(color: color),
+      );
+}
+
+class _SuggestMenu extends StatelessWidget {
+  const _SuggestMenu({required this.options, required this.onSelected});
+
+  final List<SuggestOption> options;
+  final ValueChanged<SuggestOption> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Material(
+      color: tokens.surface,
+      elevation: 4,
+      borderRadius: Corners.small,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 208, maxWidth: 260),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            borderRadius: Corners.small,
+            border: Border.all(color: tokens.border),
+          ),
+          child: ListView.builder(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            itemCount: options.length,
+            itemBuilder: (context, index) {
+              final option = options[index];
+              return InkWell(
+                onTap: () => onSelected(option),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: Insets.sm,
+                    vertical: 5,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(option.label, style: context.texts.bodyMedium),
+                      if (option.detail.isNotEmpty)
+                        Text(
+                          option.detail,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: context.texts.bodySmall
+                              ?.copyWith(color: tokens.textTertiary),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MultilineField extends StatefulWidget {
+  const MultilineField({
+    super.key,
+    required this.value,
+    required this.onCommit,
+    this.enabled = true,
+    this.hint,
+  });
+
+  final String value;
+  final ValueChanged<String> onCommit;
+  final bool enabled;
+  final String? hint;
+
+  @override
+  State<MultilineField> createState() => _MultilineFieldState();
+}
+
+class _MultilineFieldState extends State<MultilineField> {
+  late final TextEditingController _controller = TextEditingController(text: widget.value);
+  late final FocusNode _focus = FocusNode()..addListener(_onFocusChange);
+
+  @override
+  void didUpdateWidget(MultilineField old) {
+    super.didUpdateWidget(old);
+    if (!_focus.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus && _controller.text != widget.value) widget.onCommit(_controller.text);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 56, maxHeight: 132),
+      child: TextField(
+        controller: _controller,
+        focusNode: _focus,
+        enabled: widget.enabled,
+        maxLines: null,
+        expands: false,
+        keyboardType: TextInputType.multiline,
+        style: context.texts.bodyMedium?.copyWith(fontFamily: 'monospace'),
+        cursorWidth: 1,
+        cursorColor: tokens.accent,
+        decoration: InputDecoration(
+          hintText: widget.hint,
+          hintStyle: context.texts.bodySmall?.copyWith(color: tokens.textTertiary),
+          isDense: true,
+          filled: true,
+          fillColor: widget.enabled ? tokens.surfaceSunken : tokens.surface,
+          contentPadding: const EdgeInsets.all(Insets.sm),
+          border: _multilineBorder(tokens.border),
+          enabledBorder: _multilineBorder(tokens.border),
+          focusedBorder: _multilineBorder(tokens.accent),
+          disabledBorder: _multilineBorder(tokens.border),
+        ),
+      ),
+    );
+  }
+
+  OutlineInputBorder _multilineBorder(Color color) => OutlineInputBorder(
+        borderRadius: Corners.small,
+        borderSide: BorderSide(color: color),
+      );
+}
+
 class ScrubField extends StatefulWidget {
   const ScrubField({
     super.key,

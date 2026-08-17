@@ -241,6 +241,14 @@ class EditorServerTest {
             assertEquals(1, saved.saved)
             assertTrue(saved.skipped.isEmpty(), "unexpected skips: ${saved.skipped}")
 
+            val rawSnapshot = collector.take()
+            val snapshot = decode(rawSnapshot) as? dev.shadr.core.editor.PageSnapshot
+            assertNotNull(snapshot, "expected a snapshot after saving, got: $rawSnapshot")
+            assertTrue(
+                !snapshot.dirty,
+                "the editor keeps showing 'unsaved' until something else refreshes the snapshot",
+            )
+
             val text = file.readText()
             assertTrue(text.contains("x: 250"), "file was not updated:\n$text")
             assertTrue(text.contains("# keep me"), "save dropped a comment")
@@ -323,6 +331,46 @@ class EditorServerTest {
             assertNotNull(snapshot)
             assertTrue(snapshot.locked.containsKey("c"), "expected 'c' to be locked")
             assertTrue(snapshot.locked.getValue("c").contains("chip"))
+        } finally {
+            runCatching { socket.abort() }
+            server.stop()
+        }
+    }
+
+    @Test
+    fun `a connecting editor is told which effects the pack has`() {
+        val root = createTempDirectory("shadr-effects").toFile()
+        val pages = File(root, "pages").apply { mkdirs() }
+        val components = File(root, "components").apply { mkdirs() }
+        val effects = File(root, "effects").apply { mkdirs() }
+        File(pages, "demo.yml").writeText("name: demo\n")
+        File(effects, "lift.yml").writeText("move-y: -4\nscale-x: 4%\nduration-ms: 250\n")
+        File(effects, "press.yml").writeText("name: Press in\nscale-x: -6%\nduration-ms: 90\n")
+
+        val server = EditorServer(
+            port = 48421,
+            documents = FileDocumentSource(pages, components, effects),
+            bindAddress = "127.0.0.1",
+            auth = EditorAuth.Open,
+            shaders = null,
+            environment = null,
+            environmentSource = null,
+        )
+        server.start()
+        val collector = Collector()
+        val socket = HttpClient.newHttpClient().newWebSocketBuilder()
+            .buildAsync(URI.create("ws://127.0.0.1:48421/"), collector).get(5, TimeUnit.SECONDS)
+        try {
+            collector.take()
+            val list = decode(collector.take()) as? dev.shadr.core.editor.EffectList
+            assertNotNull(list, "the editor was never told about effects/")
+            assertEquals(listOf("lift", "press"), list.effects.map { it.id })
+
+            val lift = list.effects.first { it.id == "lift" }
+            assertEquals(-4.0, lift.moveY)
+            assertEquals(4.0, lift.scaleXPercent)
+            assertEquals(250L, lift.durationMs)
+            assertEquals("Press in", list.effects.first { it.id == "press" }.name)
         } finally {
             runCatching { socket.abort() }
             server.stop()

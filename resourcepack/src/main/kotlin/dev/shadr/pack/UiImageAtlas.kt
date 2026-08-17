@@ -134,7 +134,7 @@ class UiImageAtlas(
         stateFile.outputStream().use { properties.store(it, "shadr UI image codepoints: do not reorder") }
     }
 
-    private companion object {
+    companion object {
         const val TILE_SIZE = 256
         const val TILE_ASCENT = 256
         const val IMAGES_FOLDER = "images"

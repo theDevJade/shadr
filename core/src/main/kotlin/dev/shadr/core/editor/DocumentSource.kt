@@ -22,6 +22,8 @@ interface DocumentSource {
     fun load(ref: DocumentRef): Page?
 
     fun fileFor(ref: DocumentRef): File?
+
+    fun effects(): List<dev.shadr.core.page.EffectDef> = emptyList()
 }
 
 class FileDocumentSource(
@@ -30,6 +32,9 @@ class FileDocumentSource(
     private val effectsDir: File,
 ) : DocumentSource {
     private fun loader() = PageLoader(pagesDir, componentsDir, effectsDir)
+
+    override fun effects(): List<dev.shadr.core.page.EffectDef> =
+        loader().loadEffects().values.sortedBy { it.id }
 
     override fun list(): List<DocumentRef> = buildList {
         addAll(ymlNames(pagesDir).map { DocumentRef(it, DocumentKind.PAGE) })

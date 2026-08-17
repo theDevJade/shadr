@@ -29,10 +29,10 @@ import java.util.UUID
 
 class PaperBridge(
     private val plugin: Plugin,
-    frostedGlass: () -> Boolean = { false },
+    postEffects: () -> Boolean = { false },
 ) : PlatformBridge, Listener {
     val hudSink = PaperHudSink(plugin)
-    val cameraControl = PaperCamera(plugin, frostedGlass)
+    val cameraControl = PaperCamera(plugin, postEffects)
     private val inputSource = PaperInput(plugin, cameraControl)
     private val registry = PaperPlayerRegistry()
 

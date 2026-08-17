@@ -17,6 +17,7 @@ data class HudDraw(
     val scale: Vec3,
     val content: String = "",
     val item: String? = null,
+    val itemModel: String? = null,
     val itemCustomModelData: Int? = null,
     val tint: dev.shadr.core.Rgb? = null,
     val cornerFraction: Double? = null,

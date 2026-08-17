@@ -93,6 +93,8 @@ object GlslComposer {
         return program.substring(0, at - 1) to program.substring(at + 2)
     }
 
+    const val PREVIEW_EYE_DISTANCE = 2.0
+
     fun previewProgram(source: String): Pair<String, Int> {
         val preamble = """
             |#version 300 es
@@ -101,6 +103,7 @@ object GlslComposer {
             |uniform vec2 uResolution;
             |uniform float uTime;
             |uniform vec4 uTint;
+            |uniform vec2 uOrbit;
             |out vec4 fragColor;
             |
             |vec3 shadrWorldPos;
@@ -110,19 +113,46 @@ object GlslComposer {
             |vec3 shadrQuadUp;
             |
             |${GlslHelpers.SOURCE}
+            |
+            |mat3 shadr_preview_basis(vec2 orbit) {
+            |    float cy = cos(orbit.x);
+            |    float sy = sin(orbit.x);
+            |    float cp = cos(orbit.y);
+            |    float sp = sin(orbit.y);
+            |    mat3 yaw = mat3(cy, 0.0, -sy, 0.0, 1.0, 0.0, sy, 0.0, cy);
+            |    mat3 pitch = mat3(1.0, 0.0, 0.0, 0.0, cp, sp, 0.0, -sp, cp);
+            |    return yaw * pitch;
+            |}
         """.trimMargin()
 
         val epilogue = """
             |
             |void main() {
-            |    vec2 uv = gl_FragCoord.xy / uResolution;
-            |    uv.y = 1.0 - uv.y;
-            |    shadrWorldPos = vec3(uv - 0.5, 0.0);
-            |    shadrEye = vec3(0.0, 0.0, -2.0);
+            |    vec2 screen = gl_FragCoord.xy / uResolution;
+            |    screen.y = 1.0 - screen.y;
+            |
+            |    mat3 basis = shadr_preview_basis(uOrbit);
+            |    vec3 eye = vec3(0.0, 0.0, -$PREVIEW_EYE_DISTANCE);
+            |    vec3 ray = vec3(screen - 0.5, 0.0) - eye;
+            |    vec3 normal = basis * vec3(0.0, 0.0, 1.0);
+            |
+            |    float facing = dot(ray, normal);
+            |    float along = $PREVIEW_EYE_DISTANCE * normal.z / (abs(facing) < 1e-4 ? 1e-4 : facing);
+            |    vec3 at = eye + ray * along;
+            |    vec2 uv = (at * basis).xy + 0.5;
+            |
+            |    float visible = step(1e-4, abs(facing)) * step(1e-4, along)
+            |                  * step(0.0, uv.x) * step(uv.x, 1.0)
+            |                  * step(0.0, uv.y) * step(uv.y, 1.0);
+            |
+            |    shadrWorldPos = at;
+            |    shadrEye = eye;
             |    shadrQuadCentre = vec3(0.0);
-            |    shadrQuadRight = vec3(1.0, 0.0, 0.0);
-            |    shadrQuadUp = vec3(0.0, 1.0, 0.0);
-            |    fragColor = ${ShaderDef.ENTRY_POINT}(uv, mod(uTime, SHADR_CYCLE), uTint);
+            |    shadrQuadRight = basis * vec3(1.0, 0.0, 0.0);
+            |    shadrQuadUp = basis * vec3(0.0, 1.0, 0.0);
+            |
+            |    vec4 drawn = ${ShaderDef.ENTRY_POINT}(clamp(uv, 0.0, 1.0), mod(uTime, SHADR_CYCLE), uTint);
+            |    fragColor = drawn * visible;
             |}
         """.trimMargin()
 

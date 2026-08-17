@@ -92,6 +92,63 @@ class Outline {
         );
 }
 
+class Interaction {
+  const Interaction({
+    this.interactive = true,
+    this.disableHitbox = false,
+    this.hoverText = '',
+    this.hoverEffect = '',
+    this.clickEffect = '',
+    this.permission = '',
+    this.onClick = const [],
+    this.onLeftClick = const [],
+    this.onRightClick = const [],
+  });
+
+  final bool interactive;
+  final bool disableHitbox;
+  final String hoverText;
+  final String hoverEffect;
+  final String clickEffect;
+  final String permission;
+  final List<String> onClick;
+  final List<String> onLeftClick;
+  final List<String> onRightClick;
+
+  bool get actionable =>
+      onClick.isNotEmpty ||
+      onLeftClick.isNotEmpty ||
+      onRightClick.isNotEmpty ||
+      hoverText.isNotEmpty ||
+      hoverEffect.isNotEmpty ||
+      clickEffect.isNotEmpty;
+
+  static List<String> _actions(dynamic raw) => ((raw as List<dynamic>?) ?? const [])
+      .map((e) {
+        final map = e as Map<String, dynamic>;
+        final verb = (map['verb'] as String?) ?? '';
+        final argument = (map['argument'] as String?) ?? '';
+        return argument.isEmpty ? verb : '$verb $argument';
+      })
+      .where((line) => line.trim().isNotEmpty)
+      .toList();
+
+  static Interaction fromJson(Map<String, dynamic>? json) {
+    if (json == null) return const Interaction();
+    return Interaction(
+      interactive: (json['interactive'] as bool?) ?? true,
+      disableHitbox: (json['disableHitbox'] as bool?) ?? false,
+      hoverText: (json['hoverText'] as String?) ?? '',
+      hoverEffect: (json['hoverEffect'] as String?) ?? '',
+      clickEffect: (json['clickEffect'] as String?) ?? '',
+      permission: (json['permission'] as String?) ?? '',
+      onClick: _actions(json['onClick']),
+      onLeftClick: _actions(json['onLeftClick']),
+      onRightClick: _actions(json['onRightClick']),
+    );
+  }
+}
+
 class Element {
   const Element({
     required this.id,
@@ -112,6 +169,7 @@ class Element {
     this.outline,
     this.componentName,
     this.sourcePath = '',
+    this.interaction = const Interaction(),
   });
 
   final String id;
@@ -133,6 +191,8 @@ class Element {
   final String? componentName;
 
   final String sourcePath;
+
+  final Interaction interaction;
 
   String? get parentPath {
     for (final separator in const ['.children.', '.grid/']) {
@@ -176,6 +236,7 @@ class Element {
         outline: Outline.fromJson(json['outline'] as Map<String, dynamic>?),
         componentName: json['componentName'] as String?,
         sourcePath: (json['sourcePath'] as String?) ?? '',
+        interaction: Interaction.fromJson(json['interaction'] as Map<String, dynamic>?),
       );
 }
 
@@ -518,6 +579,90 @@ class EnvironmentProgram {
         customised: (json['customised'] as bool?) ?? false,
       );
 }
+
+class ImageEntry {
+  const ImageEntry({
+    required this.name,
+    required this.unicode,
+    this.columns = 1,
+    this.rows = 1,
+  });
+
+  final String name;
+  final String unicode;
+  final int columns;
+  final int rows;
+
+  static ImageEntry fromJson(Map<String, dynamic> json) => ImageEntry(
+        name: json['name'] as String,
+        unicode: (json['unicode'] as String?) ?? '',
+        columns: (json['columns'] as num?)?.toInt() ?? 1,
+        rows: (json['rows'] as num?)?.toInt() ?? 1,
+      );
+}
+
+class EffectEntry {
+  const EffectEntry({
+    required this.id,
+    required this.name,
+    this.moveX = 0,
+    this.moveY = 0,
+    this.scaleXPercent = 0,
+    this.scaleYPercent = 0,
+    this.opacityDelta = 0,
+    this.rotationDeg = 0,
+    this.durationMs = 250,
+    this.interpolation = '',
+  });
+
+  final String id;
+  final String name;
+  final double moveX;
+  final double moveY;
+  final double scaleXPercent;
+  final double scaleYPercent;
+  final int opacityDelta;
+  final double rotationDeg;
+  final int durationMs;
+  final String interpolation;
+
+  static EffectEntry fromJson(Map<String, dynamic> json) => EffectEntry(
+        id: json['id'] as String,
+        name: (json['name'] as String?) ?? (json['id'] as String),
+        moveX: (json['moveX'] as num?)?.toDouble() ?? 0,
+        moveY: (json['moveY'] as num?)?.toDouble() ?? 0,
+        scaleXPercent: (json['scaleXPercent'] as num?)?.toDouble() ?? 0,
+        scaleYPercent: (json['scaleYPercent'] as num?)?.toDouble() ?? 0,
+        opacityDelta: (json['opacityDelta'] as num?)?.toInt() ?? 0,
+        rotationDeg: (json['rotationDeg'] as num?)?.toDouble() ?? 0,
+        durationMs: (json['durationMs'] as num?)?.toInt() ?? 250,
+        interpolation: (json['interpolation'] as String?) ?? '',
+      );
+
+  String get summary {
+    final parts = <String>[];
+    if (moveX != 0 || moveY != 0) parts.add('moves ${_n(moveX)}, ${_n(moveY)}');
+    if (scaleXPercent != 0 || scaleYPercent != 0) {
+      parts.add(
+        scaleXPercent == scaleYPercent
+            ? 'scales ${_n(scaleXPercent)}%'
+            : 'scales ${_n(scaleXPercent)}%, ${_n(scaleYPercent)}%',
+      );
+    }
+    if (opacityDelta != 0) parts.add('fades ${opacityDelta > 0 ? '+' : ''}$opacityDelta');
+    if (rotationDeg != 0) parts.add('turns ${_n(rotationDeg)}°');
+    if (parts.isEmpty) parts.add('no visible change');
+    return '${parts.join(', ')} over ${durationMs}ms';
+  }
+
+  static String _n(double v) =>
+      v == v.roundToDouble() ? v.toStringAsFixed(0) : v.toStringAsFixed(1);
+}
+
+String uploadImage(String name, String base64Data) =>
+    jsonEncode({'t': 'uploadImage', 'name': name, 'data': base64Data});
+
+String deleteImage(String name) => jsonEncode({'t': 'deleteImage', 'name': name});
 
 String openProgram(String path) => jsonEncode({'t': 'openProgram', 'path': path});
 

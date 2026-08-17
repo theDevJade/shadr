@@ -8,6 +8,12 @@ package dev.shadr.core.shader
 
 import java.io.File
 
+object PostChains {
+    const val HOST = "creeper"
+
+    const val HOST_PATH = "post_effect/$HOST.json"
+}
+
 enum class EnvironmentEffect(
     val id: String,
     val title: String,
@@ -40,7 +46,7 @@ enum class EnvironmentEffect(
         title = "Frosted glass panels",
         description = "Apple-maxxing",
         programs = listOf(
-            "post_effect/creeper.json",
+            PostChains.HOST_PATH,
             "post/shadr_fullscreen.vsh",
             "post/shadr_blur_mask.fsh",
             "post/shadr_blur_dilate.fsh",
@@ -49,6 +55,20 @@ enum class EnvironmentEffect(
             "post/shadr_blur_box.fsh",
             "post/shadr_blur_composite.fsh",
             "post/shadr_blur_blit.fsh",
+        ),
+    ),
+
+    VIDEO(
+        id = "video",
+        title = "Video panels",
+        description = "Plays clips baked into the pack.",
+        programs = listOf(
+            PostChains.HOST_PATH,
+            "post/shadr_fullscreen.vsh",
+            "post/shadr_video_state.fsh",
+            "post/shadr_video_decode.fsh",
+            "post/shadr_video_writeback.fsh",
+            "post/shadr_video_composite.fsh",
         ),
     ),
     ;

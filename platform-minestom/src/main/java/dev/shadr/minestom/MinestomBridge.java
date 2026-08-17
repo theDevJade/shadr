@@ -42,9 +42,9 @@ public final class MinestomBridge implements PlatformBridge {
         this(instances, () -> false);
     }
 
-    public MinestomBridge(Function<String, Instance> instances, BooleanSupplier frostedGlass) {
+    public MinestomBridge(Function<String, Instance> instances, BooleanSupplier postEffects) {
         this.world = new MinestomWorldDisplays(instances);
-        this.camera = new MinestomCamera(players, frostedGlass);
+        this.camera = new MinestomCamera(players, postEffects);
         this.hud = new MinestomHudSink(players, camera);
         this.input = new MinestomInput(players, camera);
     }

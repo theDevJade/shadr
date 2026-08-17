@@ -4,6 +4,7 @@ import 'actions.dart';
 import 'canvas.dart';
 import 'chrome.dart';
 import 'layers.dart';
+import 'images.dart';
 import 'model.dart';
 import 'properties.dart';
 import 'protocol.dart';
@@ -129,6 +130,7 @@ class _EditorShellState extends State<EditorShell> {
                   key: ValueKey(_model.workspace),
                   child: switch (_model.workspace) {
                     Workspace.shaders => const ShaderWorkspace(),
+                    Workspace.images => const ImagesWorkspace(),
                     Workspace.ui => _uiWorkspace(),
                   },
                 ),
@@ -249,6 +251,11 @@ class _ModeRail extends StatelessWidget {
           icon: Icon(Icons.bolt_outlined, size: 18),
           selectedIcon: Icon(Icons.bolt, size: 18),
           label: Text('Shaders'),
+        ),
+        NavigationRailDestination(
+          icon: Icon(Icons.image_outlined, size: 18),
+          selectedIcon: Icon(Icons.image, size: 18),
+          label: Text('Images'),
         ),
       ],
     );

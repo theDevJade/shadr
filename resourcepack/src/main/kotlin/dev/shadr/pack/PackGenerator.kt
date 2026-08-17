@@ -19,6 +19,7 @@ class PackGenerator(
     private val shapeSupport: Boolean = false,
     private val shaders: dev.shadr.core.shader.ShaderRegistry = dev.shadr.core.shader.ShaderRegistry.EMPTY,
     private val environment: Map<dev.shadr.core.shader.EnvironmentEffect, Boolean>,
+    private val videos: List<VideoAssets.Source> = emptyList(),
 ) {
     val overrides = mutableListOf<String>()
 
@@ -46,6 +47,7 @@ class PackGenerator(
         FontAssets.writeAll(outRoot, fontDir)
         ShapeAssets.writeAll(outRoot)
         ItemShaderAssets.writeAll(outRoot, shaders)
+        VideoAssets.writeAll(outRoot, videos)
         if (environment[dev.shadr.core.shader.EnvironmentEffect.CELESTIALS] == true) {
             CelestialAssets.writeAll(outRoot)
         }
@@ -107,29 +109,37 @@ class PackGenerator(
     }
 
     private fun writeSounds(root: File) {
-        val src = soundDir?.takeIf { it.isDirectory } ?: return
-        val sfx = File(src, "sfx").takeIf { it.isDirectory } ?: src
+        val entries = mutableListOf<String>()
+        val src = soundDir?.takeIf { it.isDirectory }
+        val sfx = src?.let { File(it, "sfx").takeIf { dir -> dir.isDirectory } ?: it }
 
-        val copied = mutableListOf<String>()
-        sfx.listFiles { f -> f.isFile && f.extension == "ogg" }?.sortedBy { it.name }?.forEach { file ->
-            val name = file.nameWithoutExtension.removePrefix("ui_")
-            file.copyTo(File(root, "assets/minecraft/sounds/shadr/$name.ogg"), overwrite = true)
-            copied += name
-        }
-        if (copied.isEmpty()) return
-
-        val click = File(sfx, "ui_click.ogg").takeIf { it.isFile }
-        if (click != null) {
-            for (index in 1..4) {
-                click.copyTo(File(root, "assets/minecraft/sounds/dig/stone$index.ogg"), overwrite = true)
+        if (sfx != null) {
+            val copied = mutableListOf<String>()
+            sfx.listFiles { f -> f.isFile && f.extension == "ogg" }?.sortedBy { it.name }?.forEach { file ->
+                val name = file.nameWithoutExtension.removePrefix("ui_")
+                file.copyTo(File(root, "assets/minecraft/sounds/shadr/$name.ogg"), overwrite = true)
+                copied += name
             }
+
+            val click = File(sfx, "ui_click.ogg").takeIf { it.isFile }
+            if (click != null) {
+                for (index in 1..4) {
+                    click.copyTo(File(root, "assets/minecraft/sounds/dig/stone$index.ogg"), overwrite = true)
+                }
+            }
+            entries += copied.map { name -> soundEntry("shadr.$name", "shadr/$name") }
         }
 
-        val entries = copied.joinToString(",\n") { name ->
-            """	"shadr.$name": { "category": "master", "sounds": [ "shadr/$name" ] }"""
+        entries += videos.filter { it.audio != null }.map { source ->
+            soundEntry(source.clip.soundKey, VideoAssets.soundPath(source.clip))
         }
-        write(root, "assets/minecraft/sounds.json", "{\n$entries\n}\n")
+
+        if (entries.isEmpty()) return
+        write(root, "assets/minecraft/sounds.json", "{\n" + entries.joinToString(",\n") + "\n}\n")
     }
+
+    private fun soundEntry(event: String, path: String): String =
+        """	"$event": { "category": "master", "sounds": [ "$path" ] }"""
 
     private fun writeOptifineColors(root: File) {
         write(
@@ -178,17 +188,75 @@ class PackGenerator(
                 reportItemFragmentGap(root, overlay)
             }
 
+            val kept = environment.filterValues { it }.keys.flatMap { it.programs }.toSet()
             for ((effect, on) in environment) {
                 if (on) {
                     reportEnvironmentGap(assets, overlay, effect)
                     continue
                 }
-                effect.programs.forEach { assetFor(assets, it).delete() }
+                effect.programs.filterNot { it in kept }.forEach { assetFor(assets, it).delete() }
             }
 
-
+            writeVideoChain(assets, overlay)
         }
     }
+
+    private fun writeVideoChain(assets: File, overlay: PackOverlay) {
+        if (environment[dev.shadr.core.shader.EnvironmentEffect.VIDEO] != true) return
+        if (videos.isEmpty()) return
+
+        val chainFile = assetFor(assets, dev.shadr.core.shader.PostChains.HOST_PATH)
+
+        val blurChain = chainFile.takeIf { frostedGlassOn && it.isFile }?.readText()
+        fun abandon() {
+            if (!frostedGlassOn) chainFile.delete()
+        }
+
+        val missing = PostChainBuilder.PROGRAMS.filterNot { assetFor(assets, it).isFile }
+        if (missing.isNotEmpty()) {
+            gaps += Gap(
+                overlay = overlay,
+                feature = "video panels (${videos.joinToString { it.clip.id }})",
+                missing = missing,
+                consequence = "'type: video' elements draw nothing for these clients",
+            )
+            abandon()
+            return
+        }
+
+        val source = videos.first()
+        if (videos.size > 1) {
+            gaps += Gap(
+                overlay = overlay,
+                feature = "video panels beyond the first (" +
+                    videos.drop(1).joinToString { it.clip.id } + ")",
+                missing = listOf("a clip id in the on-screen marker"),
+                consequence = "only '${source.clip.id}' plays",
+            )
+        }
+
+        val composed = PostChainBuilder.compose(
+            blurChain = blurChain,
+            video = PostChainBuilder.Video(
+                width = source.clip.width,
+                height = source.clip.height,
+                frameCount = source.clip.frameCount,
+                fps = source.clip.fps,
+                startSeconds = 0.0,
+                data = source.clip.sheetTexture,
+                dataWidth = dev.shadr.core.video.MosaicFormat.SHEET_EDGE,
+                dataHeight = VideoAssets.dataRows(source.mosaic),
+                superColumns = source.mosaic.superColumns,
+                superblocksPerFrame = source.mosaic.superblocksPerFrame,
+            ),
+        ) ?: return
+
+        chainFile.parentFile.mkdirs()
+        chainFile.writeText(composed)
+    }
+
+    private val frostedGlassOn: Boolean
+        get() = environment[dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS] == true
 
     private fun reportItemFragmentGap(root: File, overlay: PackOverlay) {
         if (!shaders.isEmpty) {

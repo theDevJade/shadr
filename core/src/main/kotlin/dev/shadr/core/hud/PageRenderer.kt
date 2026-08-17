@@ -46,7 +46,8 @@ class PageRenderer(
         }
 
         when (element.type) {
-            ElementType.ITEM, ElementType.SHADER -> out += itemDraw(element, x, yTop, layer)
+            ElementType.ITEM, ElementType.SHADER, ElementType.VIDEO ->
+                out += itemDraw(element, x, yTop, layer)
             ElementType.TEXT -> out += textDraw(element, x, yTop, layer)
             ElementType.BLOCK_SDF -> {
                 element.outline?.let { out += sdfOutlineDraw(element, x, yTop, layer, it) }
@@ -91,6 +92,7 @@ class PageRenderer(
     private fun isDistanceField(element: Element): Boolean = element.font in DISTANCE_FIELD_FONTS
 
     private fun itemDraw(element: Element, x: Double, y: Double, layer: Double): HudDraw {
+        val video = element.type == ElementType.VIDEO
         val placement = calculator.calculateBoxPlacement(
             x, y - element.height * ITEM_VERTICAL_OFFSET_RATIO, layer, element.width, element.height,
         )
@@ -105,8 +107,21 @@ class PageRenderer(
             translation = calculator.toDisplayTranslation(
                 placement.location, placement.scale, element.hudAlignment, thickness,
             ),
-            scale = placement.scale,
-            item = element.item,
+            scale = if (video) {
+                Vec3(
+                    placement.scale.x * SDF_QUAD_SCALE,
+                    placement.scale.y * SDF_QUAD_SCALE,
+                    placement.scale.z,
+                )
+            } else {
+                placement.scale
+            },
+            item = if (video) SHAPE_ITEM else element.item,
+            itemModel = if (video) {
+                element.item?.let(dev.shadr.core.video.VideoClip::itemModelOf)
+            } else {
+                null
+            },
             itemCustomModelData = element.itemCustomModelData,
             opacity = element.opacity,
             alignment = element.hudAlignment,

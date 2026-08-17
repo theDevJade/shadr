@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart' hide Element;
 import 'package:flutter/scheduler.dart' show Ticker;
@@ -43,6 +44,7 @@ class _ShaderWorkspaceState extends State<ShaderWorkspace> {
 
   void _onTyped() {
     final model = EditorScope.read(context);
+    _syncedFrom = _controller.text;
     model.editShader(_controller.text);
     _compileDebounce?.cancel();
     _compileDebounce = Timer(const Duration(milliseconds: 250), _compile);
@@ -52,17 +54,20 @@ class _ShaderWorkspaceState extends State<ShaderWorkspace> {
     if (!mounted) return;
     final model = EditorScope.read(context);
     if (model.openProgramPath != null) {
-      setState(() => _result = const CompileResult(
-            ok: true,
-            diagnostics: [
-              ShaderDiagnostic(
-                line: 0,
-                message: 'The game compiles world programs, so the editor cannot preview '
-                    'them. Save and rebuild the pack to see the result.',
-                isError: false,
-              ),
-            ],
-          ));
+      setState(
+        () => _result = const CompileResult(
+          ok: true,
+          diagnostics: [
+            ShaderDiagnostic(
+              line: 0,
+              message:
+                  'The game compiles world programs, so the editor cannot preview '
+                  'them. Save and rebuild the pack to see the result.',
+              isError: false,
+            ),
+          ],
+        ),
+      );
       return;
     }
     final (program, offset) = model.catalog.program(_controller.text);
@@ -98,7 +103,11 @@ class _ShaderWorkspaceState extends State<ShaderWorkspace> {
         const VerticalDivider(width: 1),
         SizedBox(
           width: 340,
-          child: _PreviewPanel(preview: _preview, result: _result, model: model),
+          child: _PreviewPanel(
+            preview: _preview,
+            result: _result,
+            model: model,
+          ),
         ),
       ],
     );
@@ -125,8 +134,7 @@ class _NoShader extends StatelessWidget {
           SizedBox(
             width: 320,
             child: Text(
-              'A shader draws a custom fragment program in place of an item. The quad is the '
-              'canvas: you get a 0..1 coordinate across the element and return a colour.',
+              'A shader draws a custom fragment program in place of an item.',
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 11, color: tokens.textTertiary),
             ),
@@ -160,7 +168,10 @@ class _ShaderList extends StatelessWidget {
               padding: const EdgeInsets.all(Insets.md),
               child: Text(
                 'No shaders yet. Add one to draw a custom fragment program in place of an item.',
-                style: TextStyle(fontSize: 11, color: context.tokens.textTertiary),
+                style: TextStyle(
+                  fontSize: 11,
+                  color: context.tokens.textTertiary,
+                ),
               ),
             )
           else
@@ -203,7 +214,10 @@ class _WorldEffects extends StatelessWidget {
               Text(
                 '${model.catalog.environment.where((e) => e.enabled).length}'
                 '/${model.catalog.environment.length} in the pack',
-                style: TextStyle(fontSize: 9, color: context.tokens.textTertiary),
+                style: TextStyle(
+                  fontSize: 9,
+                  color: context.tokens.textTertiary,
+                ),
               ),
             ],
           ),
@@ -229,7 +243,10 @@ class _WorldEffectTile extends StatelessWidget {
       dense: true,
       tilePadding: const EdgeInsets.symmetric(horizontal: Insets.md),
       visualDensity: VisualDensity.compact,
-      childrenPadding: const EdgeInsets.only(left: Insets.md, bottom: Insets.sm),
+      childrenPadding: const EdgeInsets.only(
+        left: Insets.md,
+        bottom: Insets.sm,
+      ),
       shape: const Border(),
       collapsedShape: const Border(),
       title: Text(
@@ -262,7 +279,11 @@ class _WorldEffectTile extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(0, 0, Insets.md, Insets.sm),
           child: Text(
             effect.description,
-            style: TextStyle(fontSize: 10, color: tokens.textTertiary, height: 1.4),
+            style: TextStyle(
+              fontSize: 10,
+              color: tokens.textTertiary,
+              height: 1.4,
+            ),
           ),
         ),
         for (final program in effect.programs)
@@ -272,7 +293,9 @@ class _WorldEffectTile extends StatelessWidget {
             contentPadding: const EdgeInsets.only(right: Insets.md),
             selected: model.openProgramPath == program.path,
             leading: Icon(
-              program.customised ? Icons.edit_document : Icons.description_outlined,
+              program.customised
+                  ? Icons.edit_document
+                  : Icons.description_outlined,
               size: 14,
               color: program.customised ? tokens.accent : tokens.textTertiary,
             ),
@@ -328,7 +351,10 @@ Future<String?> _promptForId(
         ),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
         FilledButton(
           onPressed: () {
             if (formKey.currentState?.validate() ?? false) {
@@ -375,25 +401,36 @@ class _ShaderRow extends StatelessWidget {
         ),
         const Divider(height: 1),
         MenuItemButton(
-          leadingIcon: Icon(Icons.delete_outline, size: 15, color: tokens.danger),
+          leadingIcon: Icon(
+            Icons.delete_outline,
+            size: 15,
+            color: tokens.danger,
+          ),
           onPressed: onDelete,
           child: Text('Delete', style: TextStyle(color: tokens.danger)),
         ),
       ],
       builder: (context, controller, child) => GestureDetector(
-        onSecondaryTapDown: (details) => _openAt(controller, details.localPosition),
-        onLongPressStart: (details) => _openAt(controller, details.localPosition),
+        onSecondaryTapDown: (details) =>
+            _openAt(controller, details.localPosition),
+        onLongPressStart: (details) =>
+            _openAt(controller, details.localPosition),
         child: InkWell(
           onTap: onOpen,
           child: Container(
             color: selected ? tokens.surfaceSelected : null,
-            padding: const EdgeInsets.symmetric(horizontal: Insets.md, vertical: 6),
+            padding: const EdgeInsets.symmetric(
+              horizontal: Insets.md,
+              vertical: 6,
+            ),
             child: Row(
               children: [
                 Icon(
                   shader.issues.isEmpty ? Icons.bolt : Icons.error_outline,
                   size: 12,
-                  color: shader.issues.isEmpty ? tokens.accent : tokens.attention,
+                  color: shader.issues.isEmpty
+                      ? tokens.accent
+                      : tokens.attention,
                 ),
                 const SizedBox(width: Insets.sm),
                 Expanded(
@@ -405,7 +442,10 @@ class _ShaderRow extends StatelessWidget {
                         Text(
                           shader.description,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 10, color: tokens.textTertiary),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: tokens.textTertiary,
+                          ),
                         ),
                     ],
                   ),
@@ -427,7 +467,11 @@ class _ShaderRow extends StatelessWidget {
   }
 
   Future<void> _rename(BuildContext context, EditorModel model) async {
-    final name = await _promptForId(context, title: 'Rename shader', initial: shader.id);
+    final name = await _promptForId(
+      context,
+      title: 'Rename shader',
+      initial: shader.id,
+    );
     if (name != null && name != shader.id) model.renameShader(shader.id, name);
   }
 
@@ -439,11 +483,14 @@ class _ShaderRow extends StatelessWidget {
     );
     if (name != null) model.duplicateShader(shader.id, name);
   }
-
 }
 
 class _Editor extends StatelessWidget {
-  const _Editor({required this.controller, required this.result, required this.model});
+  const _Editor({
+    required this.controller,
+    required this.result,
+    required this.model,
+  });
 
   final TextEditingController controller;
   final CompileResult result;
@@ -466,7 +513,10 @@ class _Editor extends StatelessWidget {
           if (model.shaderDirty)
             Padding(
               padding: const EdgeInsets.only(right: Insets.sm),
-              child: Text('unsaved', style: TextStyle(fontSize: 10, color: tokens.attention)),
+              child: Text(
+                'unsaved',
+                style: TextStyle(fontSize: 10, color: tokens.attention),
+              ),
             ),
           FilledButton(
             onPressed: model.saveShaderDocument,
@@ -495,7 +545,11 @@ class _Editor extends StatelessWidget {
                 enableSuggestions: false,
                 smartQuotesType: SmartQuotesType.disabled,
                 smartDashesType: SmartDashesType.disabled,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.45),
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  height: 1.45,
+                ),
                 decoration: const InputDecoration(
                   border: InputBorder.none,
                   isDense: true,
@@ -533,9 +587,16 @@ class _Diagnostics extends StatelessWidget {
       child: clean
           ? Row(
               children: [
-                Icon(Icons.check_circle_outline, size: 12, color: tokens.accent),
+                Icon(
+                  Icons.check_circle_outline,
+                  size: 12,
+                  color: tokens.accent,
+                ),
                 const SizedBox(width: 6),
-                Text('compiles', style: TextStyle(fontSize: 11, color: tokens.textTertiary)),
+                Text(
+                  'compiles',
+                  style: TextStyle(fontSize: 11, color: tokens.textTertiary),
+                ),
               ],
             )
           : ListView(
@@ -548,7 +609,9 @@ class _Diagnostics extends StatelessWidget {
                     text: diagnostic.line > 0
                         ? 'line ${diagnostic.line}: ${diagnostic.message}'
                         : diagnostic.message,
-                    color: diagnostic.isError ? tokens.danger : tokens.attention,
+                    color: diagnostic.isError
+                        ? tokens.danger
+                        : tokens.attention,
                   ),
               ],
             ),
@@ -564,16 +627,20 @@ class _DiagnosticRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 2),
-        child: SelectableText(
-          text,
-          style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: color),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 2),
+    child: SelectableText(
+      text,
+      style: TextStyle(fontFamily: 'monospace', fontSize: 11, color: color),
+    ),
+  );
 }
 
 class _PreviewPanel extends StatefulWidget {
-  const _PreviewPanel({required this.preview, required this.result, required this.model});
+  const _PreviewPanel({
+    required this.preview,
+    required this.result,
+    required this.model,
+  });
 
   final ShaderPreviewController preview;
   final CompileResult result;
@@ -583,11 +650,16 @@ class _PreviewPanel extends StatefulWidget {
   State<_PreviewPanel> createState() => _PreviewPanelState();
 }
 
-class _PreviewPanelState extends State<_PreviewPanel> with SingleTickerProviderStateMixin {
+class _PreviewPanelState extends State<_PreviewPanel>
+    with SingleTickerProviderStateMixin {
+  static const _dragRadiansPerPixel = 0.011;
+  static const _pitchLimit = 1.4;
+
   late final Ticker _ticker = createTicker(_onTick);
   Duration _elapsed = Duration.zero;
   bool _playing = true;
   Color _tint = const Color(0xFF4CC9F0);
+  Offset _orbit = Offset.zero;
 
   @override
   void initState() {
@@ -604,24 +676,62 @@ class _PreviewPanelState extends State<_PreviewPanel> with SingleTickerProviderS
   void _onTick(Duration elapsed) {
     if (!_playing) return;
     _elapsed = elapsed;
+    _draw();
+  }
+
+  void _draw() {
     widget.preview.render(
-      time: elapsed.inMicroseconds / 1e6,
+      time: _elapsed.inMicroseconds / 1e6,
       tint: _tint,
       opacity: 1,
+      orbit: _orbit,
     );
+  }
+
+  void _orbitBy(Offset delta) {
+    setState(() {
+      _orbit = Offset(
+        _orbit.dx - delta.dx * _dragRadiansPerPixel,
+        (_orbit.dy + delta.dy * _dragRadiansPerPixel).clamp(
+          -_pitchLimit,
+          _pitchLimit,
+        ),
+      );
+    });
+    _draw();
+  }
+
+  void _resetOrbit() {
+    setState(() => _orbit = Offset.zero);
+    _draw();
   }
 
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
+    final orbited = _orbit != Offset.zero;
+
     return Panel(
       title: 'Preview',
-      trailing: IconButton(
-        tooltip: _playing ? 'Pause' : 'Play',
-        icon: Icon(_playing ? Icons.pause : Icons.play_arrow, size: 16),
-        padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-        onPressed: () => setState(() => _playing = !_playing),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: 'Face on',
+            icon: const Icon(Icons.threed_rotation, size: 16),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+            color: orbited ? tokens.accent : null,
+            onPressed: orbited ? _resetOrbit : null,
+          ),
+          IconButton(
+            tooltip: _playing ? 'Pause' : 'Play',
+            icon: Icon(_playing ? Icons.pause : Icons.play_arrow, size: 16),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+            onPressed: () => setState(() => _playing = !_playing),
+          ),
+        ],
       ),
       child: ListView(
         padding: const EdgeInsets.all(Insets.md),
@@ -634,19 +744,40 @@ class _PreviewPanelState extends State<_PreviewPanel> with SingleTickerProviderS
                 color: tokens.canvasVoid,
               ),
               child: widget.preview.available
-                  ? ShaderPreviewSurface(controller: widget.preview)
+                  ? _OrbitGesture(
+                      onDrag: _orbitBy,
+                      onReset: _resetOrbit,
+                      child: ShaderPreviewSurface(controller: widget.preview),
+                    )
                   : Center(
                       child: Text(
                         'WebGL2 unavailable',
-                        style: TextStyle(fontSize: 11, color: tokens.textTertiary),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: tokens.textTertiary,
+                        ),
                       ),
                     ),
             ),
           ),
           const SizedBox(height: Insets.md),
-          Text(
-            't = ${(_elapsed.inMilliseconds / 1000).toStringAsFixed(1)}s',
-            style: TextStyle(fontSize: 10, color: tokens.textTertiary),
+          Row(
+            children: [
+              Text(
+                't = ${(_elapsed.inMilliseconds / 1000).toStringAsFixed(1)}s',
+                style: TextStyle(fontSize: 10, color: tokens.textTertiary),
+              ),
+              const Spacer(),
+              Text(
+                orbited
+                    ? '${_degrees(_orbit.dx)}° / ${_degrees(_orbit.dy)}°'
+                    : 'drag to orbit',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: orbited ? tokens.textSecondary : tokens.textTertiary,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: Insets.md),
           Text('TINT', style: context.texts.labelSmall),
@@ -670,7 +801,9 @@ class _PreviewPanelState extends State<_PreviewPanel> with SingleTickerProviderS
                       color: colour,
                       borderRadius: BorderRadius.circular(3),
                       border: Border.all(
-                        color: _tint == colour ? Colors.white : Colors.transparent,
+                        color: _tint == colour
+                            ? Colors.white
+                            : Colors.transparent,
                       ),
                     ),
                   ),
@@ -698,13 +831,61 @@ class _PreviewPanelState extends State<_PreviewPanel> with SingleTickerProviderS
     );
   }
 
-  static List<String> _signatures(String helpers) => RegExp(
-        r'^\s*(float|vec2|vec3|vec4)\s+(shadr_\w+)\s*\(([^)]*)\)',
-        multiLine: true,
-      )
+  static String _degrees(double radians) =>
+      (radians * 180 / math.pi).round().toString();
+
+  static List<String> _signatures(String helpers) =>
+      RegExp(
+            r'^\s*(float|vec2|vec3|vec4)\s+(shadr_\w+)\s*\(([^)]*)\)',
+            multiLine: true,
+          )
           .allMatches(helpers)
           .map((m) => '${m.group(1)} ${m.group(2)}(${m.group(3)})')
           .toSet()
           .toList()
         ..sort();
+}
+
+class _OrbitGesture extends StatefulWidget {
+  const _OrbitGesture({
+    required this.onDrag,
+    required this.onReset,
+    required this.child,
+  });
+
+  final ValueChanged<Offset> onDrag;
+  final VoidCallback onReset;
+  final Widget child;
+
+  @override
+  State<_OrbitGesture> createState() => _OrbitGestureState();
+}
+
+class _OrbitGestureState extends State<_OrbitGesture> {
+  bool _dragging = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        Positioned.fill(
+          child: MouseRegion(
+            cursor: _dragging
+                ? SystemMouseCursors.grabbing
+                : SystemMouseCursors.grab,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onDoubleTap: widget.onReset,
+              onPanStart: (_) => setState(() => _dragging = true),
+              onPanUpdate: (details) => widget.onDrag(details.delta),
+              onPanEnd: (_) => setState(() => _dragging = false),
+              onPanCancel: () => setState(() => _dragging = false),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

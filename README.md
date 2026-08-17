@@ -26,6 +26,17 @@ You write a page in YAML, or in the editor:
 
 Essentially, vertex reprojection below a threshold, along with SDF math. Shadr uses custom fonts, core shader overriding, and some real hacky stuff to make everything render.
 
+## Features
+    - [x] Custom UI
+    - [x] Custom SDFs for rounded components
+    - [x] Custom shaders rendering in worldspace
+    - [x] Custom videoplayer codec and storage-efficient rendering
+    - [x] Composable screens, and HUD
+    - [x] Resource pack generation
+    - [] Multi-version support past 26.2 (TODO)
+    - [] Improve editor consistency (TODO)
+
+
 ## Running it
 
 To run the demo, on MacOS, and Linux atleast use:
@@ -56,7 +67,9 @@ Both of these are shaders hung in the world as display entities, on a vanilla cl
 
 ![A black hole above a grass field, its accretion disc lensed into a ring around the event horizon](screenshots/blackhole_screenshot.png)
 
-![A cloud-covered planet rendered as a sphere, floating over the ground](screenshots/planet_screenshot.png)
+![A cloud-covered planet rendered as a sphere, floating over the ground](screenshots/planet_screenshot.png)\
+
+![UI demo](screenshots/ui_demo.png)
 
 ## Licence
 

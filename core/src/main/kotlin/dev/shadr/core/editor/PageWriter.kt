@@ -374,6 +374,7 @@ class PageWriter {
     private sealed interface Value {
         data class Num(val value: Double) : Value
         data class Text(val value: String) : Value
+        data class Actions(val value: List<dev.shadr.core.page.ActionSpec>) : Value
     }
 
     private fun diff(before: Element, after: Element): Map<String, Value> {
@@ -402,7 +403,44 @@ class PageWriter {
         if (before.outline?.color != after.outline?.color) {
             after.outline?.let { changes["outline.color"] = Value.Text(it.color.hex()) }
         }
+        diffInteraction(before.interaction, after.interaction, changes)
         return changes
+    }
+
+    private fun diffInteraction(
+        before: dev.shadr.core.page.Interaction,
+        after: dev.shadr.core.page.Interaction,
+        changes: MutableMap<String, Value>,
+    ) {
+        if (before.interactive != after.interactive) {
+            changes["interactive"] = Value.Text(after.interactive.toString())
+        }
+        if (before.disableHitbox != after.disableHitbox) {
+            changes["disableHitbox"] = Value.Text(after.disableHitbox.toString())
+        }
+        if (before.hitboxOffsetX != after.hitboxOffsetX) {
+            changes["hitboxOffsetX"] = Value.Num(after.hitboxOffsetX)
+        }
+        if (before.hitboxOffsetY != after.hitboxOffsetY) {
+            changes["hitboxOffsetY"] = Value.Num(after.hitboxOffsetY)
+        }
+        for ((key, pair) in mapOf(
+            "hoverText" to (before.hoverText to after.hoverText),
+            "hoverEffect" to (before.hoverEffect to after.hoverEffect),
+            "clickEffect" to (before.clickEffect to after.clickEffect),
+            "permission" to (before.permission to after.permission),
+        )) {
+            val (was, now) = pair
+            if (was != now) changes[key] = Value.Text(now.orEmpty())
+        }
+        for ((key, pair) in mapOf(
+            "onClickAction" to (before.onClick to after.onClick),
+            "onLeftClickAction" to (before.onLeftClick to after.onLeftClick),
+            "onRightClickAction" to (before.onRightClick to after.onRightClick),
+        )) {
+            val (was, now) = pair
+            if (was != now) changes[key] = Value.Actions(now)
+        }
     }
 
     private fun replacesExpression(node: MappingNode, path: String): Boolean {
@@ -436,10 +474,39 @@ class PageWriter {
                 current = created
             }
         }
-        current.put(keys.last(), scalar(value))
+        val last = keys.last()
+        if (value is Value.Actions) {
+            if (value.value.isEmpty()) {
+                current.value.removeAll { (it.keyNode as? ScalarNode)?.value == last }
+            } else {
+                current.put(last, actionSequence(value.value))
+            }
+            return
+        }
+        if (value is Value.Text && value.value.isEmpty()) {
+            current.value.removeAll { (it.keyNode as? ScalarNode)?.value == last }
+            return
+        }
+        current.put(last, scalar(value))
     }
 
+    private fun actionSequence(actions: List<dev.shadr.core.page.ActionSpec>): SequenceNode =
+        SequenceNode(
+            Tag.SEQ,
+            actions.map { action ->
+                MappingNode(
+                    Tag.MAP,
+                    mutableListOf(
+                        NodeTuple(scalar(Value.Text(action.verb)), scalar(Value.Text(action.argument))),
+                    ),
+                    DumperOptions.FlowStyle.BLOCK,
+                )
+            },
+            DumperOptions.FlowStyle.BLOCK,
+        )
+
     private fun scalar(value: Value): ScalarNode = when (value) {
+        is Value.Actions -> error("an action list is not a scalar")
         is Value.Num -> {
             val text = if (value.value == value.value.toLong().toDouble()) {
                 value.value.toLong().toString()

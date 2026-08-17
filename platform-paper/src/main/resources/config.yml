@@ -30,6 +30,15 @@ resource-pack:
     external-host:
       enabled: false
       url: ''
+    # Build the pack but never send one. Another plugin owns what the player
+    # downloads; shadr contributes its files and stays out of the way. Read the
+    # generated tree through ShadrApi, or have it copied for you with merge-into.
+    merge-only:
+      enabled: false
+      # Copy the generated files over this pack after every build. Relative paths
+      # resolve against the shadr data folder. Files shadr did not generate are left
+      # alone, so the other pack keeps its own content.
+      merge-into: ''
     # You merge shadr's generated assets into your own pack; shadr sends nothing.
     external-pack:
       enabled: false

@@ -61,6 +61,8 @@ enum class ElementType(val id: String, val defaultGlyph: Char = Glyphs.BACKGROUN
 
     IMAGE("image"),
 
+    VIDEO("video"),
+
     HITBOX("hitbox"),
 
     COMPONENT("component"),

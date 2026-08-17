@@ -33,10 +33,14 @@ enum class ActionVerb(val id: String) {
     }
 }
 
-data class Action(val verb: ActionVerb, val argument: String) {
+data class Action(val verb: ActionVerb?, val argument: String, val custom: String = "") {
     companion object {
-        fun from(spec: ActionSpec): Action? =
-            ActionVerb.parse(spec.verb)?.let { Action(it, spec.argument) }
+        fun from(spec: ActionSpec): Action? {
+            val builtin = ActionVerb.parse(spec.verb)
+            if (builtin != null) return Action(builtin, spec.argument)
+            val name = spec.verb.trim().lowercase()
+            return if (name.isEmpty()) null else Action(null, spec.argument, name)
+        }
 
         fun from(specs: List<ActionSpec>): List<Action> = specs.mapNotNull { from(it) }
     }
@@ -47,6 +51,8 @@ interface ActionHost {
     fun runAsConsole(command: String)
     fun message(player: PlayerId, text: String)
     fun playSound(player: PlayerId, sound: String, volume: Double = 1.0)
+
+    fun stopSound(player: PlayerId, sound: String) = Unit
     fun closePage(player: PlayerId)
     fun openPage(player: PlayerId, page: String, replacing: Boolean)
     fun teleport(player: PlayerId, destination: String)
@@ -58,6 +64,17 @@ interface ActionHost {
 }
 
 class ActionRunner(private val host: ActionHost) {
+    private val custom = linkedMapOf<String, dev.shadr.core.api.ActionHandler>()
+
+    fun register(verb: String, handler: dev.shadr.core.api.ActionHandler): Boolean {
+        val name = verb.trim().lowercase()
+        if (name.isEmpty() || ActionVerb.parse(name) != null || custom.containsKey(name)) return false
+        custom[name] = handler
+        return true
+    }
+
+    fun customVerbs(): Set<String> = custom.keys.toSet()
+
     fun run(player: PlayerId, actions: List<Action>, permission: String? = null) {
         if (permission != null && !host.hasPermission(player, permission)) return
         step(player, actions, 0, permission)
@@ -67,6 +84,12 @@ class ActionRunner(private val host: ActionHost) {
         if (index >= actions.size) return
         val action = actions[index]
         val argument = host.resolvePlaceholders(player, action.argument)
+
+        if (action.verb == null) {
+            custom[action.custom]?.run(player, argument)
+            step(player, actions, index + 1, permission)
+            return
+        }
 
         when (action.verb) {
             ActionVerb.DELAY -> {
