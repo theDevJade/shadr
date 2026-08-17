@@ -40,7 +40,7 @@ class PostChainTest {
         val fragment = File(overlay, "include/hud_fragment.glsl").readText()
 
         assertTrue(
-            hud.contains("shadrMode = 3.0"),
+            hud.contains("shadrMode += SHADR_MODE_BLUR"),
             "hud.glsl no longer tags the blur panel, so nothing downstream can find it",
         )
         assertTrue(
@@ -48,9 +48,8 @@ class PostChainTest {
             "hud_fragment.glsl exposes no way to read the tag",
         )
         assertTrue(
-            Regex("""shadr_is_field\(\)[^}]*shadrMode < 2\.5""", RegexOption.DOT_MATCHES_ALL)
-                .containsMatchIn(fragment),
-            "the blur tag (3.0) also reads as a distance field, which would corrupt the glyph",
+            fragment.contains("mod(shadr_mode(), 4.0)"),
+            "the mode is a flag set: a rounded blur panel is both a distance field and a panel",
         )
         assertTrue(
             File(overlay, "core/text.fsh").readText().contains("SHADR_BLUR_KEY"),

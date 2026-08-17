@@ -10,12 +10,16 @@
 
 in float shadrMode;
 
+float shadr_mode() {
+    return floor(shadrMode + 0.5);
+}
+
 bool shadr_is_field() {
-    return shadrMode > 1.5 && shadrMode < 2.5;
+    return mod(shadr_mode(), 4.0) >= 2.0;
 }
 
 bool shadr_is_blur_panel() {
-    return shadrMode > 2.5;
+    return shadr_mode() >= 4.0;
 }
 
 float shadr_median(vec3 field) {

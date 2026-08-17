@@ -28,7 +28,7 @@ class PageRenderer(
         for (element in page.elements) {
             if (!element.enabled) continue
             renderElement(element, page, draws)
-            regions += hitRegion(element, page)
+            regions += hitRegion(element, page, hitLayer(element))
         }
         return RenderedPage(draws, regions)
     }
@@ -49,12 +49,19 @@ class PageRenderer(
             ElementType.ITEM, ElementType.SHADER -> out += itemDraw(element, x, yTop, layer)
             ElementType.TEXT -> out += textDraw(element, x, yTop, layer)
             ElementType.BLOCK_SDF -> {
-                element.outline?.let { out += outlineDraw(element, x, yTop, layer, it) }
+                element.outline?.let { out += sdfOutlineDraw(element, x, yTop, layer, it) }
                 out += sdfBoxDraw(element, x, yTop, layer)
             }
             else -> {
-                element.outline?.let { out += outlineDraw(element, x, yTop, layer, it) }
-                out += roundedDraws(element, x, yTop, layer)
+                val rounded = roundedRadius(element) > 0.0
+                element.outline?.let {
+                    out += if (rounded) {
+                        sdfOutlineDraw(element, x, yTop, layer, it)
+                    } else {
+                        outlineDraw(element, x, yTop, layer, it)
+                    }
+                }
+                out += if (rounded) sdfBoxDraw(element, x, yTop, layer) else blockDraw(element, x, yTop, layer)
             }
         }
     }
@@ -109,20 +116,70 @@ class PageRenderer(
         )
     }
 
-    private fun sdfBoxDraw(element: Element, x: Double, y: Double, layer: Double): HudDraw {
-        val placement = calculator.calculateBoxPlacement(x, y, layer, element.width, element.height)
-        val bucket = cornerBucketFor(element)
-        return HudDraw(
+    private fun sdfBoxDraw(element: Element, x: Double, y: Double, layer: Double): HudDraw =
+        sdfQuad(
             key = element.id,
+            element = element,
+            x = x,
+            y = y,
+            width = element.width,
+            height = element.height,
+            layer = layer,
+            radius = roundedRadius(element),
+            tint = element.color,
+        )
+
+    private fun sdfOutlineDraw(
+        element: Element,
+        x: Double,
+        y: Double,
+        layer: Double,
+        outline: dev.shadr.core.page.Outline,
+    ): HudDraw {
+        val grow = outline.size
+        return sdfQuad(
+            key = "${element.id}__outline",
+            element = element,
+            x = x - grow,
+            y = y - grow,
+            width = element.width + grow * 2.0,
+            height = element.height + grow * 2.0,
+            layer = outline.layer?.let(::runtimeLayer) ?: (layer - OUTLINE_LAYER_EPSILON),
+            radius = roundedRadius(element) + grow,
+            tint = outline.color,
+        )
+    }
+
+    private fun sdfQuad(
+        key: String,
+        element: Element,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        layer: Double,
+        radius: Double,
+        tint: dev.shadr.core.Rgb,
+    ): HudDraw {
+        val placement = calculator.calculateBoxPlacement(
+            x, y - height * ITEM_VERTICAL_OFFSET_RATIO, layer, width, height,
+        )
+        val bucket = ShapeBuckets.bucketForRadius(radius, width, height)
+        return HudDraw(
+            key = key,
             kind = HudDraw.Kind.ITEM,
             translation = calculator.toDisplayTranslation(
                 placement.location, placement.scale, element.hudAlignment,
                 distanceField = true,
             ),
-            scale = placement.scale,
+            scale = Vec3(
+                placement.scale.x * SDF_QUAD_SCALE,
+                placement.scale.y * SDF_QUAD_SCALE,
+                placement.scale.z,
+            ),
             item = SHAPE_ITEM,
             itemCustomModelData = bucket,
-            tint = element.color,
+            tint = tint,
             cornerFraction = ShapeBuckets.fractionFor(bucket),
             opacity = element.opacity,
             alignment = element.hudAlignment,
@@ -164,60 +221,15 @@ class PageRenderer(
         )
     }
 
-    private fun roundedDraws(element: Element, x: Double, y: Double, layer: Double): List<HudDraw> {
-        val rounding = element.rounding ?: return listOf(blockDraw(element, x, y, layer))
-        val radius = (rounding.radius ?: defaultRadius(rounding.size, element))
+    /**
+     * Rounding is a distance field, to prevent extra entity load.
+     */
+    private fun roundedRadius(element: Element): Double {
+        val rounding = element.rounding ?: return 0.0
+        return (rounding.radius ?: defaultRadius(rounding.size, element))
             .coerceIn(0.0, min(element.width, element.height) / 2.0)
-        if (radius <= 0.0) return listOf(blockDraw(element, x, y, layer))
-
-        val radiusIndex = radiusIndexOf(rounding.size)
-        val out = mutableListOf<HudDraw>()
-
-        out += fillPart(element, "h", x, y + radius, element.width, element.height - radius * 2.0, layer)
-        out += fillPart(element, "v", x + radius, y, element.width - radius * 2.0, element.height, layer)
-
-        val corners = listOf(
-            Triple(rounding.topLeft, x, y),
-            Triple(rounding.topRight, x + element.width - radius, y),
-            Triple(rounding.bottomRight, x + element.width - radius, y + element.height - radius),
-            Triple(rounding.bottomLeft, x, y + element.height - radius),
-        )
-        corners.forEachIndexed { index, (spec, cx, cy) ->
-            val glyph = spec.unicode ?: rounding.unicode ?: Glyphs.corner(radiusIndex, index).toString()
-            val placement = calculator.calculateBoxPlacement(
-                cx + spec.offsetX, cy + spec.offsetY, layer, radius, radius,
-                ownerWidth = element.width, ownerHeight = element.height,
-            )
-            out += draw(
-                key = "${element.id}__corner$index",
-                element = element,
-                placement = placement,
-                content = colored(element, glyph),
-            )
-        }
-        return out
     }
 
-    private fun fillPart(
-        element: Element,
-        suffix: String,
-        x: Double,
-        y: Double,
-        width: Double,
-        height: Double,
-        layer: Double,
-    ): HudDraw {
-        val placement = calculator.calculateBoxPlacement(
-            x, y, layer, max(1.0, width), max(1.0, height),
-            ownerWidth = element.width, ownerHeight = element.height,
-        )
-        return draw(
-            key = "${element.id}__fill_$suffix",
-            element = element,
-            placement = placement,
-            content = colored(element, Glyphs.BACKGROUND.toString()),
-        )
-    }
 
     private fun draw(
         key: String,
@@ -243,14 +255,32 @@ class PageRenderer(
         elementId = element.id,
     )
 
-    private fun hitRegion(element: Element, page: Page): HitRegion = HitRegion(
+    private fun hitLayer(element: Element): Double =
+        if (element.type == ElementType.BLUR) {
+            HudPositionCalculator.BLUR_PANEL_LAYER
+        } else {
+            element.layer
+        }
+
+    /**
+     * A hitbox is an explicit hit area, so it takes input whether or not anything is bound yet.
+     * A blur panel is a backdrop and never does.
+     */
+    private fun takesInput(element: Element): Boolean = when {
+        !element.interaction.interactive || element.interaction.disableHitbox -> false
+        element.type == ElementType.BLUR -> false
+        element.type == ElementType.HITBOX -> true
+        else -> element.interaction.actionable
+    }
+
+    private fun hitRegion(element: Element, page: Page, layer: Double): HitRegion = HitRegion(
         elementId = element.id,
         x = element.x + page.screen.offsetX + page.screen.hitboxOffsetX + element.interaction.hitboxOffsetX,
         y = element.y + page.screen.offsetY + page.screen.hitboxOffsetY + element.interaction.hitboxOffsetY,
         width = element.width,
         height = element.height,
-        layer = element.layer,
-        interactive = element.interaction.interactive && !element.interaction.disableHitbox,
+        layer = layer,
+        interactive = takesInput(element),
     )
 
     private fun runtimeLayer(layer: Double): Double =
@@ -276,12 +306,6 @@ class PageRenderer(
         }
     }
 
-    private fun radiusIndexOf(size: RoundingSize) = when (size) {
-        RoundingSize.SMALL -> 0
-        RoundingSize.MEDIUM -> 1
-        RoundingSize.LARGE -> 3
-        else -> 2
-    }
 
     private fun looksLikeBlock(item: String): Boolean =
         !item.substringAfter(':').let { id ->
@@ -297,6 +321,8 @@ class PageRenderer(
         val DISTANCE_FIELD_FONTS = setOf(Glyphs.FONT_UI_SHARP, Glyphs.FONT_UI_SHARP_SEMIBOLD)
 
         const val ITEM_VERTICAL_OFFSET_RATIO = 0.56
+
+        const val SDF_QUAD_SCALE = 64.0 / 40.0
         const val OUTLINE_LAYER_EPSILON = 0.01
     }
 }

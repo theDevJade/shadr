@@ -206,7 +206,14 @@ class PageResolutionTest {
         assertTrue(rendered.draws.isNotEmpty())
 
         val cardParts = rendered.draws.filter { it.elementId == "card" }
-        assertEquals(2 + 4 + 1, cardParts.size, "expected 2 fills, 4 corners, 1 outline")
+        assertEquals(
+            2, cardParts.size,
+            "a rounded card is one distance-field quad plus its outline",
+        )
+        assertEquals(
+            2, cardParts.count { it.distanceField },
+            "the card and its outline are both rounded, so both are distance fields",
+        )
 
         val button = page.elements.first { it.id == "card_button" }
         val hit = rendered.hitTest(button.centerX, button.centerY)
@@ -232,5 +239,25 @@ class PageResolutionTest {
         assertEquals(52.0, lifted.height)
 
         assertEquals(-2.0, lifted.x)
+    }
+
+    @Test
+    fun `the demo page exercises both the glyph and the distance-field font`() {
+        val root = File("..").canonicalFile
+        val loader = PageLoader(
+            pagesDir = File(root, "protocol/pages"),
+            componentsDir = File(root, "protocol/components"),
+            effectsDir = File(root, "protocol/effects"),
+        )
+        val page = loader.loadPage(File(root, "protocol/pages/demo.yml"))
+        assertNotNull(page)
+
+        val rendered = PageRenderer().render(page).draws
+        fun draw(id: String) =
+            rendered.single { it.elementId == id && it.kind == dev.shadr.core.hud.HudDraw.Kind.TEXT }
+
+        assertTrue(!draw("card_body").distanceField, "the plain line should stay a glyph")
+        assertTrue(draw("card_body_sharp").distanceField, "the sharp line should be a distance field")
+        assertTrue(draw("card_title").distanceField, "the sharp semibold title should be too")
     }
 }

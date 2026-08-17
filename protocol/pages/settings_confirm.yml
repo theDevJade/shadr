@@ -1,7 +1,4 @@
 name: settings_confirm
-# The dialog `settings.yml` opens. A page of its own, not a hidden branch inside it,
-# because the page format has no conditionals: "shown" and "not shown" are two pages, and
-# `open:` composes them without closing the one underneath.
 screen:
   width: 1920
   height: 1080

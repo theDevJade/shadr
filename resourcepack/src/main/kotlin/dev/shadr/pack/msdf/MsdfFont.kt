@@ -48,13 +48,19 @@ class MsdfFont(
         glyphs.forEachIndexed { index, character ->
             val column = index % columns
             val row = index / columns
-            val outline = font.createGlyphVector(context, character.toString()).getGlyphOutline(0)
+            val vector = font.createGlyphVector(context, character.toString())
+            val outline = vector.getGlyphOutline(0)
+            val advance = Math.round(vector.getGlyphMetrics(0).advanceX.toDouble()).toInt()
 
             val transform = AffineTransform().apply {
                 translate(padding.toDouble(), padding + ascent)
             }
 
-            val field = Msdf.render(outline, cell, cell, transform, spread)
+            val field = Msdf.render(
+                outline, cell, cell, transform, spread,
+                opaqueWidth = advance,
+                fieldWidth = advance + padding * 2,
+            )
             image.setRGB(column * cell, row * cell, cell, cell, field, 0, cell)
         }
 
@@ -79,6 +85,18 @@ class MsdfFont(
         val file = File(packRoot, "assets/minecraft/textures/$texturePath")
         file.parentFile.mkdirs()
         ImageIO.write(baked.image, "png", file)
+
+        File(file.path + ".mcmeta").writeText(
+            """
+            |{
+            |  "texture": {
+            |    "blur": true,
+            |    "clamp": true
+            |  }
+            |}
+            |
+            """.trimMargin(),
+        )
 
         val renderedHeight = Math.round(emPixels * cell / baked.emTexels).toInt().coerceAtLeast(1)
 

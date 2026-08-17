@@ -151,7 +151,11 @@ data class Interaction(
     val onLeftClick: List<ActionSpec> = emptyList(),
     val onRightClick: List<ActionSpec> = emptyList(),
     val permission: String? = null,
-)
+) {
+    val actionable: Boolean
+        get() = onClick.isNotEmpty() || onLeftClick.isNotEmpty() || onRightClick.isNotEmpty() ||
+            hoverText != null || hoverEffect != null || clickEffect != null
+}
 
 typealias DynamicFields = Map<String, String>
 

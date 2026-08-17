@@ -1,16 +1,8 @@
 name: main_menu
-# A server's front door: title, a column of destinations, a status strip.
-#
-# Built almost entirely out of `protocol/components/`, which is the point: copy this file,
-# change the labels and the actions, and you have a menu. The only bespoke elements are the
-# wordmark and the footer.
 screen:
   width: 1920
   height: 1080
   cursorSize: 10
-  # Yaw covers the full screen WIDTH over 360 degrees but pitch covers the full HEIGHT over
-  # only 180, so horizontal is inherently half as responsive. 2.0 is what makes the two axes
-  # feel the same; it is a per-page knob.
   cursorSpeed: 2.0
   cursorLayer: 9700
 
@@ -23,7 +15,6 @@ blocks:
     position: {x: 0, y: 0}
     size: {width: 1920, height: 1080}
 
-  # A soft fade behind the title so the wordmark reads over whatever the world is doing.
   - type: gradient
     id: title_wash
     layer: 1.0
@@ -37,7 +28,6 @@ blocks:
     layer: 5.0
     color: f2f2f7
     position: {x: 1920/2, y: 210}
-    # `size` on text is the FONT SCALE, not a box. 168 is a little over 2.5x.
     size: {width: 168, height: 168}
     text: "shadr"
     font: shadr_semibold
@@ -83,15 +73,6 @@ blocks:
     params: {id: footer_rule, width: 520}
     position: {x: 1920/2 - 260, y: 700}
 
-  # Status, as three chips, reading live values.
-  #
-  # `%name%` in any element's text is substituted on a timer
-  # (`editor.placeholders.text-refresh`, one second by default) and only re-sent when the
-  # value actually changes. shadr answers the `shadr_` names itself, so this works on a bare
-  # server with no expansion plugin; a host that installs one can answer any other name.
-  #
-  # An unknown placeholder is left on screen verbatim, so a page that
-  # shows `%shadr_tps%` is telling you the resolver is not wired up.
   - type: grid_block
     id: status_row
     direction: row

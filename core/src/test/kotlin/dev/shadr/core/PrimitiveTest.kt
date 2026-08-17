@@ -6,6 +6,7 @@
  */
 package dev.shadr.core
 
+import dev.shadr.core.hud.HudPositionCalculator
 import dev.shadr.core.hud.PageRenderer
 import dev.shadr.core.page.Element
 import dev.shadr.core.page.ElementType
@@ -86,7 +87,14 @@ class PrimitiveTest {
             legacy.map { it.translation to it.scale },
             explicit.map { it.translation to it.scale },
         )
-        assertTrue(explicit.size > 1, "a rounded box should be more than one quad")
+        assertEquals(
+            1, explicit.size,
+            "rounding is a distance field, so it must cost exactly one display entity",
+        )
+        assertTrue(
+            explicit.single().distanceField,
+            "a rounded box that is not a distance field is the old glyph mosaic",
+        )
     }
 
     @Test
@@ -155,5 +163,102 @@ class PrimitiveTest {
             Glyphs.ROUNDED_SOFT.code, Glyphs.ROUNDED_SOFT2.code, Glyphs.ROUNDED_SOFT3.code,
         )
         assertTrue(orphaned.isEmpty(), "shipped but unreachable glyphs: $orphaned")
+    }
+
+    @Test
+    fun `a rounded box sits where any other item display of that size sits`() {
+        fun render(extra: Map<String, Any?>) = PageRenderer()
+            .render(
+                Page(
+                    name = "t",
+                    elements = resolve(
+                        buildMap {
+                            put("id", "a")
+                            put("position", mapOf("x" to 10, "y" to 20))
+                            put("size", mapOf("width" to 100, "height" to 60))
+                            putAll(extra)
+                        },
+                    ),
+                ),
+            )
+            .draws
+            .single()
+
+        val item = render(mapOf("type" to "item", "item" to "minecraft:stone"))
+        val rounded = render(mapOf("type" to "block", "rounding" to mapOf("size" to "regular")))
+
+        assertTrue(rounded.distanceField, "rounding should be a distance field")
+        assertEquals(
+            item.translation.y,
+            rounded.translation.y + HudPositionCalculator.FIELD_BAND,
+            1e-9,
+            "the rounded box and a plain item display disagree on where their quad sits",
+        )
+        assertEquals(item.translation.x, rounded.translation.x, 1e-9)
+    }
+
+    @Test
+    fun `a rounded box covers the same area as the glyph it replaces`() {
+        fun render(extra: Map<String, Any?>) = PageRenderer()
+            .render(
+                Page(
+                    name = "t",
+                    elements = resolve(
+                        buildMap {
+                            put("id", "a")
+                            put("position", mapOf("x" to 0, "y" to 0))
+                            put("size", mapOf("width" to 200, "height" to 80))
+                            putAll(extra)
+                        },
+                    ),
+                ),
+            )
+            .draws
+            .single()
+
+        val square = render(mapOf("type" to "block"))
+        val rounded = render(mapOf("type" to "block", "rounding" to mapOf("size" to "regular")))
+
+        val glyphBlocks = PageRenderer.SDF_QUAD_SCALE
+        assertEquals(
+            square.scale.x * glyphBlocks, rounded.scale.x, 1e-9,
+            "a rounded box draws smaller than the square one it replaces",
+        )
+        assertEquals(square.scale.y * glyphBlocks, rounded.scale.y, 1e-9)
+    }
+
+    @Test
+    fun `a rounded box does not sit on a square outline`() {
+        val draws = PageRenderer()
+            .render(
+                Page(
+                    name = "t",
+                    elements = resolve(
+                        mapOf(
+                            "type" to "block",
+                            "id" to "a",
+                            "position" to mapOf("x" to 0, "y" to 0),
+                            "size" to mapOf("width" to 200, "height" to 80),
+                            "rounding" to mapOf("size" to "regular"),
+                            "outline" to mapOf("size" to 4, "color" to "ff0000"),
+                        ),
+                    ),
+                ),
+            )
+            .draws
+
+        assertEquals(2, draws.size)
+        assertTrue(
+            draws.all { it.distanceField },
+            "the outline is still a square glyph behind a rounded box",
+        )
+
+        val outline = draws.single { it.key.endsWith("__outline") }
+        val box = draws.single { !it.key.endsWith("__outline") }
+        assertTrue(
+            outline.cornerFraction!! > 0.0 && box.cornerFraction!! > 0.0,
+            "both quads should be rounded",
+        )
+        assertTrue(outline.scale.x > box.scale.x, "the outline should be the larger quad")
     }
 }

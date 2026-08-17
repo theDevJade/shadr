@@ -53,6 +53,9 @@ object Msdf {
         }
     }
 
+    /**
+     * @param opaqueWidth how many columns carry [FIELD_ALPHA].
+     */
     fun render(
         shape: Shape,
         width: Int,
@@ -60,12 +63,25 @@ object Msdf {
         transform: AffineTransform,
         spread: Double = 6.0,
         cornerAngleDegrees: Double = 30.0,
+        opaqueWidth: Int = width,
+        fieldWidth: Int = width,
     ): IntArray {
         val transformed = transform.createTransformedShape(shape)
         val edges = colorEdges(contoursOf(transformed), cornerAngleDegrees)
         val pixels = IntArray(width * height)
+        val ink = opaqueWidth.coerceIn(0, width)
+        val live = fieldWidth.coerceIn(0, width)
 
-        if (edges.isEmpty()) return pixels
+        if (edges.isEmpty()) {
+            val empty = encode(-spread, spread)
+            for (y in 0 until height) {
+                for (x in 0 until width) {
+                    val alpha = if (x < ink) FIELD_ALPHA else 0
+                    pixels[y * width + x] = (alpha shl 24) or (empty shl 16) or (empty shl 8) or empty
+                }
+            }
+            return pixels
+        }
 
         for (y in 0 until height) {
             for (x in 0 until width) {
@@ -85,11 +101,12 @@ object Msdf {
                 val medianValue = median(encode(r, spread), encode(g, spread), encode(b, spread))
                 val disagrees = (medianValue - 128) * (reference - 128) < 0
 
-                val red = if (disagrees) reference else encode(r, spread)
-                val green = if (disagrees) reference else encode(g, spread)
-                val blue = if (disagrees) reference else encode(b, spread)
+                val outside = encode(-spread, spread)
+                val red = if (x >= live) outside else if (disagrees) reference else encode(r, spread)
+                val green = if (x >= live) outside else if (disagrees) reference else encode(g, spread)
+                val blue = if (x >= live) outside else if (disagrees) reference else encode(b, spread)
 
-                val alpha = if (nearest <= spread || inside) FIELD_ALPHA else 0
+                val alpha = if (x < ink) FIELD_ALPHA else 0
 
                 pixels[y * width + x] = (alpha shl 24) or (red shl 16) or (green shl 8) or blue
             }

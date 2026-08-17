@@ -20,7 +20,9 @@ void main() {
 
     float covered = 1.0;
     for (float offset = -Radius; offset <= Radius; offset += 1.0) {
-        covered = min(covered, texture(InSampler, texCoord + sampleStep * offset).a);
+        vec2 at = texCoord + sampleStep * offset;
+        bool outside = at.x < 0.0 || at.x > 1.0 || at.y < 0.0 || at.y > 1.0;
+        covered = min(covered, outside ? 0.0 : texture(InSampler, at).a);
     }
 
     fragColor = vec4(vec3(0.0), covered);

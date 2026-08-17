@@ -12,6 +12,10 @@
 
 #define SHADR_BLUR_PANEL_Z 500000.0
 
+#define SHADR_MODE_HUD 1.0
+#define SHADR_MODE_FIELD 2.0
+#define SHADR_MODE_BLUR 4.0
+
 out float shadrMode;
 
 bool is_hud(vec3 Position) {
@@ -23,14 +27,14 @@ bool make_hud() {
 
     if (is_hud(Position)) {
         float y = Position.y;
-        shadrMode = 1.0;
+        shadrMode = SHADR_MODE_HUD;
         if (y < -SHADR_FIELD_BAND) {
             y += SHADR_FIELD_BAND;
-            shadrMode = 2.0;
+            shadrMode += SHADR_MODE_FIELD;
         }
 
         if (abs(Position.z - SHADR_BLUR_PANEL_Z) < 1.0) {
-            shadrMode = 3.0;
+            shadrMode += SHADR_MODE_BLUR;
         }
 
         vec3 pos = vec3(Position.x, y, Position.z) + vec3(0.0, 15000.0, 0.0);

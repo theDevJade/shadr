@@ -53,12 +53,11 @@ blocks:
         position:
           x: 32
           y: 38
-        # `size` on a text element is the FONT SCALE, not a bounding box: 64 is 1x.
         size:
           width: 96
           height: 96
         text: "shadr"
-        font: shadr_semibold
+        font: shadr_sharp_semibold
         textAlign: left
       - type: text
         id: card_body
@@ -71,6 +70,19 @@ blocks:
           width: 64
           height: 64
         text: "Every element here is a glyph placed by a display entity."
+        textAlign: left
+      - type: text
+        id: card_body_sharp
+        layer: 11.0
+        color: 9a9aa8
+        position:
+          x: 32
+          y: 132
+        size:
+          width: 64
+          height: 64
+        text: "Every element here is a glyph placed by a display entity."
+        font: shadr_sharp
         textAlign: left
       - type: block_rounded
         id: card_button

@@ -79,6 +79,10 @@ void main() {
         if (color.a < 0.01) {
             discard;
         }
+        if (shadr_is_blur_panel()) {
+            fragColor = vec4(SHADR_BLUR_KEY, 1.0);
+            return;
+        }
         fragColor = color * vertexColor * ColorModulator;
         return;
     }

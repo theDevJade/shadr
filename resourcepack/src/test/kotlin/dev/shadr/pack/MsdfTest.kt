@@ -86,14 +86,33 @@ class MsdfTest {
     }
 
     @Test
-    fun `alpha marks the field extent, which is what sets letter-spacing`() {
-        val pixels = field(Rectangle2D.Double(16.0, 16.0, 32.0, 32.0))
+    fun `alpha marks the advance box, whatever the field is doing`() {
+        val advance = 40
+        val pixels = Msdf.render(
+            Rectangle2D.Double(16.0, 16.0, 32.0, 32.0),
+            size, size, AffineTransform(), spread, opaqueWidth = advance,
+        )
         val marker = Msdf.FIELD_ALPHA
 
-        assertEquals(marker, (at(pixels, 32, 32) ushr 24) and 0xFF, "interior must be marked")
-        assertEquals(marker, (at(pixels, 13, 32) ushr 24) and 0xFF, "the spread band must be marked")
+        assertEquals(marker, (at(pixels, 4, 32) ushr 24) and 0xFF, "inside the advance, far from any edge")
+        assertEquals(marker, (at(pixels, advance - 1, 32) ushr 24) and 0xFF, "the last advance column")
+        assertEquals(0, (at(pixels, advance, 32) ushr 24) and 0xFF, "past the advance")
+    }
 
-        assertEquals(0, (at(pixels, 4, 32) ushr 24) and 0xFF, "far outside must be unmarked")
+    @Test
+    fun `a glyph with no outline still advances`() {
+        val advance = 24
+        val pixels = Msdf.render(
+            Rectangle2D.Double(0.0, 0.0, 0.0, 0.0),
+            size, size, AffineTransform(), spread, opaqueWidth = advance,
+        )
+
+        assertEquals(
+            Msdf.FIELD_ALPHA, (at(pixels, 0, 32) ushr 24) and 0xFF,
+            "a space advances by nothing, so words run together",
+        )
+        assertEquals(0, (at(pixels, advance, 32) ushr 24) and 0xFF)
+        assertEquals(0.0, median(at(pixels, 32, 32)), 1e-9, "an empty cell must still read as outside")
     }
 
     @Test

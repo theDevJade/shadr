@@ -44,7 +44,7 @@ class PackGenerator(
         writePackMeta(outRoot)
         writePackIcon(outRoot)
         FontAssets.writeAll(outRoot, fontDir)
-        if (shapeSupport) ShapeAssets.writeAll(outRoot)
+        ShapeAssets.writeAll(outRoot)
         ItemShaderAssets.writeAll(outRoot, shaders)
         if (environment[dev.shadr.core.shader.EnvironmentEffect.CELESTIALS] == true) {
             CelestialAssets.writeAll(outRoot)
@@ -186,13 +186,7 @@ class PackGenerator(
                 effect.programs.forEach { assetFor(assets, it).delete() }
             }
 
-            if (!shapeSupport && shaders.isEmpty) {
-                itemProgram.delete()
-                File(target, "include/hud_shape.glsl").delete()
-                File(target, "include/shadr_shaders.glsl").delete()
-            } else if (!shapeSupport) {
-                File(target, "include/hud_shape.glsl").takeIf { !it.isFile }?.let { }
-            }
+
         }
     }
 
