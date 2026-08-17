@@ -1,0 +1,19 @@
+[versions]
+kotlin = "2.0.21"
+paper = "1.21.8-R0.1-SNAPSHOT"
+kotlinx-serialization = "1.7.3"
+snakeyaml = "2.2"
+# PlaceholderAPI is compileOnly and soft-depended on
+placeholderapi = "2.12.3"
+spotless = "8.9.0"
+
+[libraries]
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
+paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
+placeholderapi = { module = "me.clip:placeholderapi", version.ref = "placeholderapi" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
+
+[plugins]
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

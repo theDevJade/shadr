@@ -1,0 +1,97 @@
+name: Bug report
+description: Something behaves differently than documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issues do not belong here. Use private reporting instead, see SECURITY.md.
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the page below
+        2. Hover the button
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: shadr-version
+    attributes:
+      label: shadr version
+      description: From /shadr update check, or the jar filename.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Paper
+        - Minestom
+        - testserver
+        - resourcepack CLI only
+        - editor
+    validations:
+      required: true
+
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+      placeholder: Paper 1.21.8 build 42
+    validations:
+      required: true
+
+  - type: input
+    id: client-version
+    attributes:
+      label: Client version
+      description: Which overlay applies depends on this, so it matters for anything visual.
+      placeholder: "26.2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: graphics
+    attributes:
+      label: Client graphics mode
+      description: Relevant for anything involving shaders, blur, or frosted glass.
+      options:
+        - Fast
+        - Fancy
+        - Fabulous
+        - not applicable
+
+  - type: input
+    id: mods
+    attributes:
+      label: Client mods
+      description: Sodium and Iris reimplement parts of the pipeline shadr overrides.
+      placeholder: none
+
+  - type: textarea
+    id: page
+    attributes:
+      label: Page YAML
+      description: The smallest page that shows the problem, if it is page-related.
+      render: yaml
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Server log
+      description: Relevant lines, or a paste link.
+      render: text

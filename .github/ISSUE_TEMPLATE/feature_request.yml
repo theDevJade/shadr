@@ -1,0 +1,44 @@
+name: Feature request
+description: Suggest something shadr should be able to do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Check docs/ROADMAP.md first. Some of this is already known to be missing, and knowing
+        why it is missing usually changes the shape of the request.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to build
+      description: The UI or behaviour you want. The API you imagine for it is useful too, but secondary.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today instead
+      description: The workaround, if there is one, and where it falls down.
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed shape
+      description: If you have one. A YAML sketch is ideal for anything page-related.
+      render: yaml
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - page format
+        - renderer
+        - shaders / resource pack
+        - editor
+        - Paper adapter
+        - Minestom adapter
+        - integrations
+        - other

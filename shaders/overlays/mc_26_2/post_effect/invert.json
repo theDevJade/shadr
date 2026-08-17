@@ -1,0 +1,222 @@
+{
+  "_comment": [
+    "shadr's frosted-glass pass"
+  ],
+  "targets": {
+    "shadr:backdrop_a": {
+      "width": 480,
+      "height": 270
+    },
+    "shadr:backdrop_b": {
+      "width": 480,
+      "height": 270
+    },
+    "shadr:composed": {}
+  },
+  "passes": [
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_extract",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "minecraft:main"
+        },
+        {
+          "sampler_name": "InDepth",
+          "target": "minecraft:main",
+          "use_depth_buffer": true
+        }
+      ],
+      "output": "shadr:backdrop_a"
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_box",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "shadr:backdrop_a"
+        }
+      ],
+      "output": "shadr:backdrop_b",
+      "uniforms": {
+        "ShadrBlurConfig": [
+          {
+            "type": "vec2",
+            "value": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "type": "float",
+            "value": 8.0
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_box",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "shadr:backdrop_b"
+        }
+      ],
+      "output": "shadr:backdrop_a",
+      "uniforms": {
+        "ShadrBlurConfig": [
+          {
+            "type": "vec2",
+            "value": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "type": "float",
+            "value": 8.0
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_box",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "shadr:backdrop_a"
+        }
+      ],
+      "output": "shadr:backdrop_b",
+      "uniforms": {
+        "ShadrBlurConfig": [
+          {
+            "type": "vec2",
+            "value": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "type": "float",
+            "value": 8.0
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_box",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "shadr:backdrop_b"
+        }
+      ],
+      "output": "shadr:backdrop_a",
+      "uniforms": {
+        "ShadrBlurConfig": [
+          {
+            "type": "vec2",
+            "value": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "type": "float",
+            "value": 8.0
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_box",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "shadr:backdrop_a"
+        }
+      ],
+      "output": "shadr:backdrop_b",
+      "uniforms": {
+        "ShadrBlurConfig": [
+          {
+            "type": "vec2",
+            "value": [
+              1.0,
+              0.0
+            ]
+          },
+          {
+            "type": "float",
+            "value": 8.0
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_box",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "shadr:backdrop_b"
+        }
+      ],
+      "output": "shadr:backdrop_a",
+      "uniforms": {
+        "ShadrBlurConfig": [
+          {
+            "type": "vec2",
+            "value": [
+              0.0,
+              1.0
+            ]
+          },
+          {
+            "type": "float",
+            "value": 8.0
+          }
+        ]
+      }
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_composite",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "minecraft:main"
+        },
+        {
+          "sampler_name": "InDepth",
+          "target": "minecraft:main",
+          "use_depth_buffer": true
+        },
+        {
+          "sampler_name": "Blur",
+          "target": "shadr:backdrop_a",
+          "bilinear": true
+        }
+      ],
+      "output": "shadr:composed"
+    },
+    {
+      "vertex_shader": "minecraft:post/shadr_fullscreen",
+      "fragment_shader": "minecraft:post/shadr_blur_blit",
+      "inputs": [
+        {
+          "sampler_name": "In",
+          "target": "shadr:composed"
+        }
+      ],
+      "output": "minecraft:main"
+    }
+  ]
+}

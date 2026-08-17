@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="shadr">
+  <title>shadr</title>
+
+  <rect width="256" height="256" fill="#15151C"/>
+
+  <g transform="translate(128 128) scale(0.82) translate(-128 -128)">
+    <path d="M108 50 L54 80 Q44 85 44 96 V160 Q44 171 54 176 L108 206"
+          fill="none" stroke="#2B6E85" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="108" y="50" width="104" height="156" rx="18" fill="#4CC9F0"/>
+    <g transform="translate(138 89) scale(0.58)" fill="#15151C" stroke="#15151C" stroke-width="10" stroke-linejoin="round">
+      <path d="M0 0 L0 120 L28 92 L48 132 L70 122 L50 82 L88 78 Z"/>
+    </g>
+  </g>
+</svg>
