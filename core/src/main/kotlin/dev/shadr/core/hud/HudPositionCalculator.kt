@@ -12,6 +12,9 @@ import kotlin.math.floor
 import kotlin.math.max
 
 class HudPositionCalculator {
+    /**
+     * @param ownerWidth,ownerHeight the size of the element this quad belongs to.
+     */
     fun calculateBoxPlacement(
         x: Double,
         y: Double,
@@ -19,19 +22,27 @@ class HudPositionCalculator {
         width: Double,
         height: Double,
         applyTopDrift: Boolean = true,
+        ownerWidth: Double = width,
+        ownerHeight: Double = height,
     ): Placement {
         val w = max(1.0, width)
         val h = max(1.0, height)
+        val ownerW = max(1.0, ownerWidth)
+        val ownerH = max(1.0, ownerHeight)
         val hudWidth = w * YAML_TO_HUD_SIZE_FACTOR
         val hudHeight = h * YAML_TO_HUD_SIZE_FACTOR
 
-        val leftCompensation = hudWidth / BOX_LEFT_COMP_DIVISOR
-        val topCompensation = hudHeight / BOX_TOP_COMP_DIVISOR
+        val leftCompensation = ownerW * YAML_TO_HUD_SIZE_FACTOR / BOX_LEFT_COMP_DIVISOR
+        val topCompensation = ownerH * YAML_TO_HUD_SIZE_FACTOR / BOX_TOP_COMP_DIVISOR
 
-        val topDrift = if (applyTopDrift) max(0.0, (h - BOX_TOP_DRIFT_START_HEIGHT) * BOX_TOP_DRIFT_PER_HEIGHT) else 0.0
+        val topDrift = if (applyTopDrift) {
+            max(0.0, (ownerH - BOX_TOP_DRIFT_START_HEIGHT) * BOX_TOP_DRIFT_PER_HEIGHT)
+        } else {
+            0.0
+        }
 
         val location = Vec3(
-            x + w / 2.0 - leftCompensation + leftStepCorrection(w),
+            x + w / 2.0 - leftCompensation + leftStepCorrection(ownerW),
             y + h + topCompensation - topDrift,
             layer,
         )

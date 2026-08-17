@@ -95,8 +95,8 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build core
-        run: ./gradlew :core:jar --no-daemon
+      - name: Build the jars minestom and testserver consume
+        run: ./gradlew :core:jar :resourcepack:jar --no-daemon
 
       - name: platform-minestom
         run: ./gradlew build --no-daemon

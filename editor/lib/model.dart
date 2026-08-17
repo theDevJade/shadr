@@ -510,12 +510,13 @@ class EditorModel extends ChangeNotifier {
       return;
     }
 
+    final dragging = movingSelection;
     final moving = snapshot.elements
-        .where((e) => _selection.contains(e.id))
+        .where((e) => dragging.contains(e.id))
         .toList();
     if (moving.isEmpty) return;
     final others = snapshot.elements
-        .where((e) => !_selection.contains(e.id))
+        .where((e) => !dragging.contains(e.id))
         .toList();
 
     final snapped = _snapper.snap(
@@ -665,7 +666,8 @@ class EditorModel extends ChangeNotifier {
     if (isPreviewing || _selection.isEmpty) return;
     final snapshot = _snapshot;
     if (snapshot == null) return;
-    final moving = snapshot.elements.where((e) => _selection.contains(e.id));
+    final dragging = movingSelection;
+    final moving = snapshot.elements.where((e) => dragging.contains(e.id));
     _send(
       wire.patchElements({
         for (final element in moving)

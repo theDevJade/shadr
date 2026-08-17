@@ -31,7 +31,7 @@ void main() {
 
       final edits = transport.lastOfType('patchAll')!['edits'] as Map<String, dynamic>;
       expect(edits.keys.toSet(), {'card', 'title', 'body', 'cell'});
-      expect(edits['title']['position.x'], '40');
+      expect(edits['title']['position.x'], '40.0');
       expect(edits['outside'], isNull);
     });
 

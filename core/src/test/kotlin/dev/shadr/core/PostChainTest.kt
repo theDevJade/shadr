@@ -236,4 +236,51 @@ class PostChainTest {
             "turning the effect off would leave the chain in the pack",
         )
     }
+
+    @Test
+    fun `every piece of a rounded element is placed in the same frame`() {
+        val calculator = HudPositionCalculator()
+
+        for ((w, h) in listOf(120.0 to 40.0, 800.0 to 620.0, 3000.0 to 800.0, 1920.0 to 1080.0)) {
+            for (authored in listOf(4.0, 14.0, 40.0)) {
+                val radius = authored.coerceIn(0.0, minOf(w, h) / 2.0)
+                val pieces = listOf(
+                    Triple(0.0, radius, w to h - radius * 2),
+                    Triple(radius, 0.0, w - radius * 2 to h),
+                    Triple(0.0, 0.0, radius to radius),
+                    Triple(w - radius, h - radius, radius to radius),
+                )
+                val offsets = pieces.map { (px, py, size) ->
+                    val clampedW = maxOf(1.0, size.first)
+                    val clampedH = maxOf(1.0, size.second)
+                    val placement = calculator.calculateBoxPlacement(
+                        px, py, 0.0, clampedW, clampedH, ownerWidth = w, ownerHeight = h,
+                    )
+                    Pair(
+                        placement.location.x - (px + clampedW / 2.0),
+                        placement.location.y - (py + clampedH),
+                    )
+                }
+                val spreadX = offsets.maxOf { it.first } - offsets.minOf { it.first }
+                val spreadY = offsets.maxOf { it.second } - offsets.minOf { it.second }
+                assertTrue(
+                    spreadX < 1e-9 && spreadY < 1e-9,
+                    "at ${w}x$h radius $radius the pieces disagree on their frame: $offsets",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `a rounded element sits where a plain one of the same size would`() {
+        val calculator = HudPositionCalculator()
+        val whole = calculator.calculateBoxPlacement(10.0, 20.0, 0.0, 3000.0, 800.0)
+        val band = calculator.calculateBoxPlacement(
+            10.0, 20.0, 0.0, 3000.0, 720.0, ownerWidth = 3000.0, ownerHeight = 800.0,
+        )
+        assertEquals(
+            whole.location.x, band.location.x, 1e-9,
+            "rounding an element moved it sideways",
+        )
+    }
 }

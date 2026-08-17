@@ -46,6 +46,10 @@ Put the platform-paper jar in plugins/ and start the server.
 
 Run `./gradlew spotlessApply` for everything, it will throw otherwise.
 
+## AI Notice
+
+Some of this codebase was generated and edited with local AI, mainly the tests. Local AI was also used for debugging and to check my math.
+
 ## Licence
 
 Apache 2.0 — see [LICENSE](LICENSE).

@@ -75,7 +75,23 @@ class _LayersPanelState extends State<LayersPanel> {
 
     return Panel(
       title: 'Layers',
-      trailing: Text('${snapshot.elements.length}', style: context.texts.labelSmall),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ToolButton(
+            icon: Icons.flip_to_front,
+            tooltip: 'Bring forward  ⌘]',
+            onPressed: model.canReorder ? model.bringForward : null,
+          ),
+          ToolButton(
+            icon: Icons.flip_to_back,
+            tooltip: 'Send backward  ⌘[',
+            onPressed: model.canReorder ? model.sendBackward : null,
+          ),
+          const SizedBox(width: Insets.xs),
+          Text('${snapshot.elements.length}', style: context.texts.labelSmall),
+        ],
+      ),
       child: Column(
         children: [
           Padding(

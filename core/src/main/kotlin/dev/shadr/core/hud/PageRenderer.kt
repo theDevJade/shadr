@@ -186,6 +186,7 @@ class PageRenderer(
             val glyph = spec.unicode ?: rounding.unicode ?: Glyphs.corner(radiusIndex, index).toString()
             val placement = calculator.calculateBoxPlacement(
                 cx + spec.offsetX, cy + spec.offsetY, layer, radius, radius,
+                ownerWidth = element.width, ownerHeight = element.height,
             )
             out += draw(
                 key = "${element.id}__corner$index",
@@ -206,7 +207,10 @@ class PageRenderer(
         height: Double,
         layer: Double,
     ): HudDraw {
-        val placement = calculator.calculateBoxPlacement(x, y, layer, max(1.0, width), max(1.0, height))
+        val placement = calculator.calculateBoxPlacement(
+            x, y, layer, max(1.0, width), max(1.0, height),
+            ownerWidth = element.width, ownerHeight = element.height,
+        )
         return draw(
             key = "${element.id}__fill_$suffix",
             element = element,
