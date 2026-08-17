@@ -20,8 +20,8 @@ if [[ ! -d out/pack ]]; then
         --args="$PWD/shaders $PWD/out/pack $PWD/assets/font $PWD/assets/shadr/sounds"
 fi
 
-echo "==> core (jar, consumed by the Minestom builds)"
-./gradlew :core:jar
+echo "==> core + resourcepack (jars, consumed by the Minestom builds)"
+./gradlew :core:jar :resourcepack:jar
 
 echo "==> platform-minestom (the SPI adapter)"
 (cd platform-minestom && ./gradlew jar)

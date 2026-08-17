@@ -45,6 +45,11 @@ void main() {
         discard;
     }
 
+    if (shadr_is_blur_panel()) {
+        fragColor = vec4(SHADR_BLUR_KEY, 1.0);
+        return;
+    }
+
 #ifdef IS_SEE_THROUGH
     fragColor = color * ColorModulator;
 #elif defined(IS_GUI)

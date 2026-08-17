@@ -18,8 +18,7 @@ class PackGenerator(
     private val soundDir: File? = null,
     private val shapeSupport: Boolean = false,
     private val shaders: dev.shadr.core.shader.ShaderRegistry = dev.shadr.core.shader.ShaderRegistry.EMPTY,
-    private val environment: Map<dev.shadr.core.shader.EnvironmentEffect, Boolean> =
-        dev.shadr.core.shader.EnvironmentEffect.entries.associateWith { false },
+    private val environment: Map<dev.shadr.core.shader.EnvironmentEffect, Boolean>,
 ) {
     val overrides = mutableListOf<String>()
 
@@ -154,8 +153,9 @@ class PackGenerator(
             if (!source.isDirectory) {
                 error("missing shader sources for ${overlay.label}: ${source.path}")
             }
-            val target = File(root, "${overlay.directory}/assets/minecraft/shaders")
-            copyTree(source, target)
+            val assets = File(root, "${overlay.directory}/assets/minecraft")
+            val target = File(assets, "shaders")
+            copyTree(source, assets)
 
             for (dir in listOf("all", overlay.sourceDirectory)) {
                 val custom = File(File(shaderSrc, "custom"), dir)
@@ -164,7 +164,7 @@ class PackGenerator(
                     val rel = file.relativeTo(custom).path
                     overrides += "${overlay.directory}/$rel"
                 }
-                copyTree(custom, target)
+                copyTree(custom, assets)
             }
 
             val itemProgram = File(target, "core/item.fsh")
@@ -180,10 +180,10 @@ class PackGenerator(
 
             for ((effect, on) in environment) {
                 if (on) {
-                    reportEnvironmentGap(target, overlay, effect)
+                    reportEnvironmentGap(assets, overlay, effect)
                     continue
                 }
-                effect.programs.forEach { File(target, it).delete() }
+                effect.programs.forEach { assetFor(assets, it).delete() }
             }
 
             if (!shapeSupport && shaders.isEmpty) {
@@ -221,11 +221,11 @@ class PackGenerator(
     }
 
     private fun reportEnvironmentGap(
-        target: File,
+        assets: File,
         overlay: PackOverlay,
         effect: dev.shadr.core.shader.EnvironmentEffect,
     ) {
-        val missing = effect.programs.filterNot { File(target, it).isFile }
+        val missing = effect.programs.filterNot { assetFor(assets, it).isFile }
         if (missing.isEmpty()) return
         gaps += Gap(
             overlay = overlay,
@@ -235,19 +235,32 @@ class PackGenerator(
         )
     }
 
-    private fun copyTree(from: File, to: File) {
+    private fun copyTree(from: File, assets: File) {
         for (file in from.walkTopDown()) {
             if (!file.isFile) continue
             if (file.name.startsWith(".") || file.name == "Thumbs.db") continue
-            val target = File(to, file.relativeTo(from).path)
+            val target = assetFor(assets, file.relativeTo(from).invariantPath)
             target.parentFile.mkdirs()
             file.copyTo(target, overwrite = true)
         }
     }
 
+    private val File.invariantPath: String get() = path.replace(File.separatorChar, '/')
+
+    private fun assetFor(assets: File, rel: String): File =
+        if (rel == POST_EFFECT_DIR || rel.startsWith("$POST_EFFECT_DIR/")) {
+            File(assets, rel)
+        } else {
+            File(File(assets, "shaders"), rel)
+        }
+
     private fun write(root: File, rel: String, text: String) {
         val file = File(root, rel)
         file.parentFile.mkdirs()
         file.writeText(text)
+    }
+
+    companion object {
+        const val POST_EFFECT_DIR = "post_effect"
     }
 }

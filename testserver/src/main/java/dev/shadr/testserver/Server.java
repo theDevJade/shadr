@@ -19,6 +19,7 @@ import dev.shadr.core.page.Page;
 import dev.shadr.core.page.PageLoader;
 import dev.shadr.core.hud.PageRenderer;
 import dev.shadr.core.session.UiSession;
+import dev.shadr.core.shader.EnvironmentEffect;
 import dev.shadr.core.shader.EnvironmentSettings;
 import dev.shadr.core.shader.EnvironmentSource;
 import dev.shadr.core.shader.ShaderApi;
@@ -77,16 +78,24 @@ public final class Server {
     private static final ShaderLoader SHADERS =
             new ShaderLoader(REPO_ROOT.resolve("shaders/items").toFile());
 
+    private static final EnvironmentSettings ENVIRONMENT =
+            new EnvironmentSettings(REPO_ROOT.resolve("shaders/environment.properties").toFile());
+
     private static ShaderApi shaderApi;
+
+    private static volatile byte[] packZip;
+    private static volatile String packSha1;
+    private static volatile String packUrl;
+
+    private static final Object PACK_LOCK = new Object();
 
     public static void main(String[] args) throws Exception {
         loadPage();
 
-        final byte[] packZip = zipDirContents(resolvePackDir());
-        final String sha1Hex = sha1Hex(packZip);
-        final String packUrl = "http://127.0.0.1:" + HTTP_PORT + "/pack-" + sha1Hex + ".zip";
-        startPackHost(packZip);
-        System.out.println("[shadr] hosting pack (" + packZip.length + " bytes, sha1=" + sha1Hex + ") at " + packUrl);
+        publishPack(zipDirContents(resolvePackDir()));
+        startPackHost();
+        System.out.println("[shadr] hosting pack (" + packZip.length + " bytes, sha1=" + packSha1
+                + ") at " + packUrl);
 
         final MinecraftServer server = MinecraftServer.init();
         instance = MinecraftServer.getInstanceManager().createInstanceContainer();
@@ -94,7 +103,9 @@ public final class Server {
         instance.setGenerator(unit -> unit.modifier().fillHeight(0, 40, Block.GRASS_BLOCK));
         instance.setTime(6000);
 
-        bridge = new MinestomBridge(name -> instance);
+        bridge = new MinestomBridge(
+                name -> instance,
+                () -> ENVIRONMENT.isEnabled(EnvironmentEffect.FROSTED_GLASS));
         bridge.install();
         shaderApi = new ShaderApi(bridge, SHADERS::load);
 
@@ -124,8 +135,7 @@ public final class Server {
         events.addListener(PlayerSpawnEvent.class, event -> {
             final Player player = event.getPlayer();
             player.setGameMode(GameMode.CREATIVE);
-            bridge.pack().send(
-                    new PlayerId(player.getUuid().toString()), packUrl, hexToBytes(sha1Hex), true);
+            sendPack(new PlayerId(player.getUuid().toString()));
             player.sendMessage(Component.text(
                     "shadr: /ui to open the demo page, /editor for a browser link."));
         });
@@ -274,9 +284,9 @@ public final class Server {
                     return kotlin.Unit.INSTANCE;
                 },
                 SHADERS,
-                new EnvironmentSettings(REPO_ROOT.resolve("shaders/environment.properties").toFile()),
+                ENVIRONMENT,
                 new EnvironmentSource(REPO_ROOT.resolve("shaders").toFile()),
-                () -> false,
+                Server::rebuildPack,
                 line -> {
                     System.out.println("[shadr] " + line);
                     return kotlin.Unit.INSTANCE;
@@ -364,9 +374,10 @@ public final class Server {
         return java.util.HexFormat.of().parseHex(hex);
     }
 
-    private static void startPackHost(byte[] payload) throws IOException {
+    private static void startPackHost() throws IOException {
         final HttpServer http = HttpServer.create(new InetSocketAddress("0.0.0.0", HTTP_PORT), 0);
         http.createContext("/", exchange -> {
+            final byte[] payload = packZip;
             exchange.getResponseHeaders().add("Content-Type", "application/zip");
             exchange.sendResponseHeaders(200, payload.length);
             exchange.getResponseBody().write(payload);
@@ -374,5 +385,41 @@ public final class Server {
         });
         http.setExecutor(null);
         http.start();
+    }
+
+    private static void publishPack(byte[] zipped) throws Exception {
+        packZip = zipped;
+        packSha1 = sha1Hex(zipped);
+        packUrl = "http://127.0.0.1:" + HTTP_PORT + "/pack-" + packSha1 + ".zip";
+    }
+
+    private static void sendPack(PlayerId player) {
+        bridge.pack().send(player, packUrl, hexToBytes(packSha1), true);
+    }
+
+    private static boolean rebuildPack() {
+        synchronized (PACK_LOCK) {
+            try {
+                new dev.shadr.pack.PackGenerator(
+                        REPO_ROOT.resolve("shaders").toFile(),
+                        REPO_ROOT.resolve("assets/font").toFile(),
+                        REPO_ROOT.resolve("assets/shadr/sounds").toFile(),
+                        false,
+                        SHADERS.load(),
+                        ENVIRONMENT.all())
+                        .build(PACK_DIR.toFile(), true);
+                publishPack(zipDirContents(PACK_DIR));
+            } catch (Exception failure) {
+                System.out.println("[shadr] pack rebuild failed: " + failure);
+                return false;
+            }
+        }
+        System.out.println("[shadr] pack rebuilt (" + packZip.length + " bytes, sha1=" + packSha1 + ")");
+        MinecraftServer.getSchedulerManager().scheduleNextTick(() -> {
+            for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
+                sendPack(new PlayerId(player.getUuid().toString()));
+            }
+        });
+        return true;
     }
 }

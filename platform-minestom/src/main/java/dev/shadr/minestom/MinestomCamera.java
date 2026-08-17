@@ -68,7 +68,7 @@ public final class MinestomCamera implements CameraControl {
         final Pos base = entity.getPosition().withView(0f, 0f);
         final Pos eye = base.add(0, entity.getEyeHeight(), 0);
 
-        final Entity camera = new Entity(frostedGlass.getAsBoolean() ? EntityType.ENDERMAN : EntityType.TEXT_DISPLAY);
+        final Entity camera = new Entity(frostedGlass.getAsBoolean() ? EntityType.CREEPER : EntityType.TEXT_DISPLAY);
         camera.setNoGravity(true);
         camera.setInvisible(true);
         final Entity mount = new Entity(EntityType.TEXT_DISPLAY);

@@ -59,8 +59,12 @@ class _PageCanvasState extends State<PageCanvas> {
   }
 
   void _onPointerSignal(PointerSignalEvent event) {
-    if (event is! PointerScrollEvent) return;
     final model = _model;
+    if (event is PointerScaleEvent) {
+      model.zoomAt(event.localPosition, event.scale);
+      return;
+    }
+    if (event is! PointerScrollEvent) return;
     final zooming = HardwareKeyboard.instance.isControlPressed ||
         HardwareKeyboard.instance.isMetaPressed;
     if (zooming) {
@@ -352,7 +356,8 @@ class _PagePainter extends CustomPainter {
         final radius = math.min(rect.width, rect.height) / 2;
         canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)), paint);
       case 'BLUR':
-        final rounded = RRect.fromRectAndRadius(rect, const Radius.circular(6));
+        final blurRadius = element.rounding?.resolvedRadius(rect.width, rect.height) ?? 0;
+        final rounded = RRect.fromRectAndRadius(rect, Radius.circular(blurRadius));
         canvas.drawRRect(rounded, Paint()..color = color.withValues(alpha: color.a * 0.45));
         canvas.drawRRect(
           rounded,

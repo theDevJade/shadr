@@ -3,16 +3,15 @@
 #moj_import <shadr_post.glsl>
 
 uniform sampler2D InSampler;
-uniform sampler2D InDepthSampler;
+uniform sampler2D MaskSampler;
 
 in vec2 texCoord;
 out vec4 fragColor;
 
 void main() {
-    float depth = texture(InDepthSampler, texCoord).r;
+    vec3 scene = texture(InSampler, texCoord).rgb;
 
-    bool isUi = depth >= SHADR_HUD_DEPTH_BASE - SHADR_BLUR_PANEL_EPSILON
-        || shadr_is_blur_panel(depth);
+    bool insidePanel = texture(MaskSampler, texCoord).a > 0.5;
 
-    fragColor = isUi ? vec4(0.0) : vec4(texture(InSampler, texCoord).rgb, 1.0);
+    fragColor = insidePanel ? vec4(0.0) : vec4(scene, 1.0);
 }

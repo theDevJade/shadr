@@ -22,6 +22,7 @@ class PackAssetsTest {
             shaderSrc = File(repo, "shaders"),
             fontDir = File(repo, "assets/font"),
             soundDir = File(repo, "assets/shadr/sounds"),
+            environment = dev.shadr.core.shader.EnvironmentEffect.entries.associateWith { false },
         ).build(root)
         return root
     }

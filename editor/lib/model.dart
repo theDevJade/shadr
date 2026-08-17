@@ -601,6 +601,66 @@ class EditorModel extends ChangeNotifier {
     );
   }
 
+  /// The selection plus everything nested inside it, so dragging a card takes its contents.
+  Set<String> get movingSelection {
+    final elements = _snapshot?.elements ?? const <Element>[];
+    final roots = elements.where((e) => _selection.contains(e.id)).toList();
+    final out = <String>{..._selection};
+    for (final root in roots) {
+      if (root.sourcePath.isEmpty) continue;
+      for (final other in elements) {
+        if (other.id == root.id) continue;
+        for (final separator in const ['.children.', '.grid/']) {
+          if (other.sourcePath.startsWith('${root.sourcePath}$separator')) out.add(other.id);
+        }
+      }
+    }
+    return out;
+  }
+
+  bool get canReorder => _selection.isNotEmpty && !isPreviewing;
+
+  List<Element> _reorderPeers(Element of) {
+    final elements = _snapshot?.elements ?? const <Element>[];
+    return elements
+        .where((e) => !e.isBlur && e.parentPath == of.parentPath)
+        .toList()
+      ..sort((a, b) => a.layer.compareTo(b.layer));
+  }
+
+  void _shift(int direction) {
+    if (!canReorder) return;
+    final element = soleSelection;
+    if (element == null || element.isBlur) return;
+    final peers = _reorderPeers(element);
+    final at = peers.indexWhere((e) => e.id == element.id);
+    final swapWith = at + direction;
+    if (at < 0 || swapWith < 0 || swapWith >= peers.length) return;
+    final other = peers[swapWith];
+    _send(wire.patchElements({
+      element.id: {'layer': '${other.layer}'},
+      other.id: {'layer': '${element.layer}'},
+    }));
+  }
+
+  void bringForward() => _shift(1);
+
+  void sendBackward() => _shift(-1);
+
+  void _toEnd(bool front) {
+    if (!canReorder) return;
+    final element = soleSelection;
+    if (element == null || element.isBlur) return;
+    final peers = _reorderPeers(element);
+    if (peers.isEmpty) return;
+    final target = front ? peers.last.layer + 1 : peers.first.layer - 1;
+    _send(wire.patchElement(element.id, {'layer': '$target'}));
+  }
+
+  void bringToFront() => _toEnd(true);
+
+  void sendToBack() => _toEnd(false);
+
   void nudge(Offset delta) {
     if (isPreviewing || _selection.isEmpty) return;
     final snapshot = _snapshot;

@@ -100,7 +100,7 @@ class PaperCamera(
     }
 
     private fun spawnPostEffectCamera(owner: Player, at: Location): Entity =
-        owner.world.spawn(at, org.bukkit.entity.Enderman::class.java) { mob ->
+        owner.world.spawn(at, org.bukkit.entity.Creeper::class.java) { mob ->
             mob.isPersistent = false
             mob.setGravity(false)
             mob.setAI(false)

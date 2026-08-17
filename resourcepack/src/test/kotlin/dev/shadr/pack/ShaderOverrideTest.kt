@@ -15,6 +15,18 @@ import kotlin.test.assertTrue
 class ShaderOverrideTest {
     private fun repo() = File("..").canonicalFile
 
+    private fun asset(out: File, program: String): File =
+        if (program.startsWith("post_effect/")) {
+            File(out, "shadr_26_2/assets/minecraft/$program")
+        } else {
+            File(out, "shadr_26_2/assets/minecraft/shaders/$program")
+        }
+
+    private fun generateWith(
+        environment: Map<dev.shadr.core.shader.EnvironmentEffect, Boolean>,
+    ): Pair<File, PackGenerator> =
+        generate(environment.filterValues { it }.keys)
+
     private fun generate(
         environment: Set<dev.shadr.core.shader.EnvironmentEffect> = emptySet(),
         customise: (File) -> Unit = {},
@@ -101,7 +113,7 @@ class ShaderOverrideTest {
         for (effect in dev.shadr.core.shader.EnvironmentEffect.entries) {
             for (program in effect.programs) {
                 assertTrue(
-                    !File(off, "shadr_26_2/assets/minecraft/shaders/$program").isFile,
+                    !asset(off, program).isFile,
                     "${effect.id} shipped $program while switched off",
                 )
             }
@@ -111,7 +123,7 @@ class ShaderOverrideTest {
         for (effect in dev.shadr.core.shader.EnvironmentEffect.entries) {
             for (program in effect.programs) {
                 assertTrue(
-                    File(on, "shadr_26_2/assets/minecraft/shaders/$program").isFile,
+                    asset(on, program).isFile,
                     "${effect.id} did not ship $program while switched on",
                 )
             }
@@ -243,6 +255,67 @@ class ShaderOverrideTest {
         assertTrue(
             fsh.contains("base * mix(") || fsh.contains("base *"),
             "the sky does not derive its output from ColorModulator",
+        )
+    }
+
+    @Test
+    fun `settings read off disk carry through to the programs the pack ships`() {
+        val dir = createTempDirectory("shadr-env").toFile()
+        val settings = dev.shadr.core.shader.EnvironmentSettings(File(dir, "environment.properties"))
+        settings.set(dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS, true)
+
+        val reread = dev.shadr.core.shader.EnvironmentSettings(File(dir, "environment.properties"))
+        val (out, _) = generateWith(reread.all())
+
+        for (program in dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS.programs) {
+            assertTrue(
+                asset(out, program).isFile,
+                "a host that switched frosted glass on still did not ship $program",
+            )
+        }
+        assertTrue(
+            !File(out, "shadr_26_2/assets/minecraft/shaders/core/sky.fsh").isFile,
+            "an effect nobody switched on shipped anyway",
+        )
+    }
+
+    @Test
+    fun `spectating the post-effect mob without the chain is not a state the pack can reach`() {
+        val (out, _) = generateWith(
+            mapOf(dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS to true),
+        )
+        assertTrue(
+            File(out, "shadr_26_2/assets/minecraft/post_effect/creeper.json").isFile,
+            "frosted glass is on but vanilla's creeper effect would run instead of shadr's chain",
+        )
+        assertTrue(
+            !File(out, "shadr_26_2/assets/minecraft/shaders/post_effect/creeper.json").isFile,
+            "the post-effect definition is under shaders/, where 26.2 does not look for it",
+        )
+    }
+
+    @Test
+    fun `overlay files land where the vanilla client reads them`() {
+        val (out, _) = generateWith(
+            dev.shadr.core.shader.EnvironmentEffect.entries.associateWith { true },
+        )
+        val assets = File(out, "shadr_26_2/assets/minecraft")
+
+        assertTrue(
+            File(assets, "post_effect/creeper.json").isFile,
+            "post-effect definitions belong in assets/minecraft/post_effect/",
+        )
+        assertTrue(
+            File(assets, "shaders/post/shadr_blur_composite.fsh").isFile,
+            "post programs belong in assets/minecraft/shaders/post/",
+        )
+        assertTrue(
+            File(assets, "shaders/core/sky.fsh").isFile,
+            "core programs belong in assets/minecraft/shaders/core/",
+        )
+        assertTrue(
+            !File(assets, "shaders/shaders").isDirectory,
+            "the overlay was nested one level too deep",
         )
     }
 }

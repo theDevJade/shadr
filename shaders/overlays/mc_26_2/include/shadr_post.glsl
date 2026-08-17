@@ -10,8 +10,15 @@
 #define SHADR_BLUR_PANEL_LAYER -5000.0
 #define SHADR_BLUR_PANEL_DEPTH (SHADR_HUD_DEPTH_BASE + SHADR_BLUR_PANEL_LAYER * SHADR_LAYER_TO_DEPTH)
 
-#define SHADR_BLUR_PANEL_EPSILON 0.0005
+#define SHADR_BLUR_KEY vec3(0.0, 0.047058824, 0.011764706)
 
-bool shadr_is_blur_panel(float depth) {
-    return abs(depth - SHADR_BLUR_PANEL_DEPTH) < SHADR_BLUR_PANEL_EPSILON;
+#define SHADR_BLUR_KEY_TOLERANCE 0.006
+
+/** The frost's own tint, mixed over the blurred backdrop. */
+#define SHADR_BLUR_TINT vec3(0.06, 0.07, 0.09)
+
+#define SHADR_BLUR_TINT_STRENGTH 0.28
+
+bool shadr_is_blur_panel(vec3 colour) {
+    return all(lessThan(abs(colour - SHADR_BLUR_KEY), vec3(SHADR_BLUR_KEY_TOLERANCE)));
 }

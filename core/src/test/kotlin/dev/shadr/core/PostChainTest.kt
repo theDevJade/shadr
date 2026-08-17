@@ -16,35 +16,83 @@ import kotlin.test.assertTrue
 
 class PostChainTest {
     private val overlay = File("../shaders/overlays/mc_26_2").canonicalFile
-    private val chainFile = File(overlay, "post_effect/invert.json")
+    private val chainFile = File(overlay, "post_effect/creeper.json")
     private val postInclude = File(overlay, "include/shadr_post.glsl")
 
     @Test
-    fun `a blur panel's layer lands at the depth the post pass looks for`() {
+    fun `hud_glsl recognises the blur panel at the translation the renderer gives it`() {
         val translationZ = -HudPositionCalculator.BLUR_PANEL_LAYER *
             HudPositionCalculator.LEGACY_LAYER_Z_PIXEL_MULTIPLIER
 
-        val depth = 0.95 - (translationZ / 100_000_000.0)
+        val hud = File(overlay, "include/hud.glsl").readText()
+        val declared = Regex("""#define\s+SHADR_BLUR_PANEL_Z\s+([0-9.]+)""")
+            .find(hud)?.groupValues?.get(1)?.toDouble()
 
-        assertEquals(HudPositionCalculator.BLUR_PANEL_DEPTH, depth, 1e-12)
-        assertEquals(0.945, depth, 1e-9)
+        assertEquals(
+            translationZ, declared,
+            "hud.glsl keys bad",
+        )
     }
 
     @Test
-    fun `the blur band cannot collide with an authored layer`() {
-        val epsilon = 0.0005
-        fun depthOf(layer: Double) =
-            HudPositionCalculator.HUD_DEPTH_BASE + layer * HudPositionCalculator.LAYER_TO_DEPTH
+    fun `the vertex stage tags the panel and the fragment stage reads that tag`() {
+        val hud = File(overlay, "include/hud.glsl").readText()
+        val fragment = File(overlay, "include/hud_fragment.glsl").readText()
 
-        for (layer in listOf(0.0, 1.0, 10.0, 100.0, 9700.0, 10_000.0)) {
-            val gap = Math.abs(depthOf(layer) - HudPositionCalculator.BLUR_PANEL_DEPTH)
+        assertTrue(
+            hud.contains("shadrMode = 3.0"),
+            "hud.glsl no longer tags the blur panel, so nothing downstream can find it",
+        )
+        assertTrue(
+            fragment.contains("shadr_is_blur_panel()"),
+            "hud_fragment.glsl exposes no way to read the tag",
+        )
+        assertTrue(
+            Regex("""shadr_is_field\(\)[^}]*shadrMode < 2\.5""", RegexOption.DOT_MATCHES_ALL)
+                .containsMatchIn(fragment),
+            "the blur tag (3.0) also reads as a distance field, which would corrupt the glyph",
+        )
+        assertTrue(
+            File(overlay, "core/text.fsh").readText().contains("SHADR_BLUR_KEY"),
+            "text.fsh never paints the key, so the post chain has nothing to detect",
+        )
+    }
+
+    @Test
+    fun `the core shaders and the post chain agree on the key colour`() {
+        fun keyIn(file: String): String? = Regex("""#define\s+SHADR_BLUR_KEY\s+(vec3\([^)]*\))""")
+            .find(File(overlay, file).readText())?.groupValues?.get(1)?.replace(" ", "")
+
+        val core = keyIn("include/hud_fragment.glsl")
+        val post = keyIn("include/shadr_post.glsl")
+
+        assertNotNull(core, "hud_fragment.glsl declares no SHADR_BLUR_KEY")
+        assertEquals(core, post, "the panel is painted in one colour and looked for in another")
+    }
+
+    @Test
+    fun `the chain asks for no depth buffer`() {
+        assertTrue(
+            !chainFile.readText().contains("use_depth_buffer"),
+            "an entity post effect is handed an empty depth buffer, so this input reads all zeroes",
+        )
+        for (shader in listOf("post/shadr_blur_extract.fsh", "post/shadr_blur_composite.fsh")) {
             assertTrue(
-                gap > epsilon * 2,
-                "layer $layer is only $gap from the blur band, which the shader would read as a panel",
+                !File(overlay, shader).readText().contains("DepthSampler"),
+                "$shader still samples a depth buffer that is never populated",
             )
         }
+    }
 
-        assertTrue(HudPositionCalculator.BLUR_PANEL_DEPTH < depthOf(0.0))
+    @Test
+    fun `the blur layer stays reserved, so no authored layer is mistaken for a panel`() {
+        for (layer in listOf(0.0, 1.0, 10.0, 100.0, 9700.0, 10_000.0)) {
+            assertTrue(
+                layer != HudPositionCalculator.BLUR_PANEL_LAYER,
+                "layer $layer collides with the reserved blur layer",
+            )
+        }
+        assertTrue(HudPositionCalculator.BLUR_PANEL_LAYER < 0.0)
     }
 
     @Test
@@ -184,7 +232,7 @@ class PostChainTest {
         }
 
         assertTrue(
-            effect.programs.contains("post_effect/invert.json"),
+            effect.programs.contains("post_effect/creeper.json"),
             "turning the effect off would leave the chain in the pack",
         )
     }

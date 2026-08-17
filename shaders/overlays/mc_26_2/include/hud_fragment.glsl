@@ -6,10 +6,16 @@
  */
 #define SHADR_FIELD_RANGE 4.0
 
+#define SHADR_BLUR_KEY vec3(0.0, 0.047058824, 0.011764706)
+
 in float shadrMode;
 
 bool shadr_is_field() {
-    return shadrMode > 1.5;
+    return shadrMode > 1.5 && shadrMode < 2.5;
+}
+
+bool shadr_is_blur_panel() {
+    return shadrMode > 2.5;
 }
 
 float shadr_median(vec3 field) {

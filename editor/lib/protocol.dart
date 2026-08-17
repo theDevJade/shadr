@@ -150,7 +150,7 @@ class Element {
   double get effectiveLayer => isBlur ? blurPanelLayer : layer;
 
   bool get supportsRounding =>
-      type == 'BLOCK' || type == 'BLOCK_ROUNDED' || type == 'BLOCK_SDF';
+      type == 'BLOCK' || type == 'BLOCK_ROUNDED' || type == 'BLOCK_SDF' || isBlur;
 
   bool get isRounded =>
       supportsRounding && (rounding?.resolvedRadius(width, height) ?? 0) > 0;

@@ -40,8 +40,11 @@ enum class EnvironmentEffect(
         title = "Frosted glass panels",
         description = "Apple-maxxing",
         programs = listOf(
-            "post_effect/invert.json",
+            "post_effect/creeper.json",
             "post/shadr_fullscreen.vsh",
+            "post/shadr_blur_mask.fsh",
+            "post/shadr_blur_dilate.fsh",
+            "post/shadr_blur_erode.fsh",
             "post/shadr_blur_extract.fsh",
             "post/shadr_blur_box.fsh",
             "post/shadr_blur_composite.fsh",

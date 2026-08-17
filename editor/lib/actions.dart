@@ -51,6 +51,22 @@ class ZoomToActualSizeIntent extends Intent {
   const ZoomToActualSizeIntent();
 }
 
+class BringForwardIntent extends Intent {
+  const BringForwardIntent();
+}
+
+class SendBackwardIntent extends Intent {
+  const SendBackwardIntent();
+}
+
+class BringToFrontIntent extends Intent {
+  const BringToFrontIntent();
+}
+
+class SendToBackIntent extends Intent {
+  const SendToBackIntent();
+}
+
 class NudgeIntent extends Intent {
   const NudgeIntent(this.delta, {this.coarse = false});
 
@@ -82,6 +98,20 @@ const Map<ShortcutActivator, Intent> editorShortcuts = <ShortcutActivator, Inten
   SingleActivator(LogicalKeyboardKey.equal, meta: true): ZoomInIntent(),
   SingleActivator(LogicalKeyboardKey.minus, control: true): ZoomOutIntent(),
   SingleActivator(LogicalKeyboardKey.minus, meta: true): ZoomOutIntent(),
+  SingleActivator(LogicalKeyboardKey.equal): ZoomInIntent(),
+  SingleActivator(LogicalKeyboardKey.add): ZoomInIntent(),
+  SingleActivator(LogicalKeyboardKey.numpadAdd): ZoomInIntent(),
+  SingleActivator(LogicalKeyboardKey.minus): ZoomOutIntent(),
+  SingleActivator(LogicalKeyboardKey.numpadSubtract): ZoomOutIntent(),
+
+  SingleActivator(LogicalKeyboardKey.bracketRight, control: true): BringForwardIntent(),
+  SingleActivator(LogicalKeyboardKey.bracketRight, meta: true): BringForwardIntent(),
+  SingleActivator(LogicalKeyboardKey.bracketLeft, control: true): SendBackwardIntent(),
+  SingleActivator(LogicalKeyboardKey.bracketLeft, meta: true): SendBackwardIntent(),
+  SingleActivator(LogicalKeyboardKey.bracketRight, control: true, shift: true): BringToFrontIntent(),
+  SingleActivator(LogicalKeyboardKey.bracketRight, meta: true, shift: true): BringToFrontIntent(),
+  SingleActivator(LogicalKeyboardKey.bracketLeft, control: true, shift: true): SendToBackIntent(),
+  SingleActivator(LogicalKeyboardKey.bracketLeft, meta: true, shift: true): SendToBackIntent(),
 
   SingleActivator(LogicalKeyboardKey.arrowLeft): NudgeIntent(Offset(-1, 0)),
   SingleActivator(LogicalKeyboardKey.arrowRight): NudgeIntent(Offset(1, 0)),
@@ -227,6 +257,18 @@ class _Nudge extends _ModelAction<NudgeIntent> {
   void invoke(NudgeIntent intent) => model.nudge(intent.delta * (intent.coarse ? 10 : 1));
 }
 
+class _Reorder<T extends Intent> extends _ModelAction<T> {
+  _Reorder(super.model, this.move);
+
+  final void Function() move;
+
+  @override
+  bool isEnabled(T intent) => model.canReorder;
+
+  @override
+  void invoke(T intent) => move();
+}
+
 class _ZoomBy<T extends Intent> extends _ModelAction<T> {
   _ZoomBy(super.model, this.viewportSize, this.factor);
 
@@ -276,6 +318,10 @@ class EditorActionRegistry {
           ClearSelectionIntent: _ClearSelection(model),
           ToggleSnappingIntent: _ToggleSnapping(model),
           NudgeIntent: _Nudge(model),
+          BringForwardIntent: _Reorder<BringForwardIntent>(model, model.bringForward),
+          SendBackwardIntent: _Reorder<SendBackwardIntent>(model, model.sendBackward),
+          BringToFrontIntent: _Reorder<BringToFrontIntent>(model, model.bringToFront),
+          SendToBackIntent: _Reorder<SendToBackIntent>(model, model.sendToBack),
           ZoomInIntent: _ZoomBy<ZoomInIntent>(model, viewportSize, 1.25),
           ZoomOutIntent: _ZoomBy<ZoomOutIntent>(model, viewportSize, 0.8),
           ZoomToFitIntent: _ZoomToFit(model, viewportSize),

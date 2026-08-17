@@ -178,6 +178,7 @@ class ShadrPlugin : JavaPlugin() {
             shaders = shaderLoader.load().also { _ ->
                 shaderLoader.issues.forEach { logger.warning("shader: $it") }
             },
+            environment = environment.all(),
         ).build(packRoot)
 
         val atlas = UiImageAtlas(
