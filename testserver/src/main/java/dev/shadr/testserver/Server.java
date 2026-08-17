@@ -1,0 +1,380 @@
+/*
+ * Shadr
+ *
+ * Copyright © 2026 theDevJade. All rights reserved.
+ *
+ * Part of the Shadr project.
+ * See LICENSE for licensing and distribution terms.
+ */
+package dev.shadr.testserver;
+
+import com.sun.net.httpserver.HttpServer;
+import dev.shadr.core.PlayerId;
+import dev.shadr.core.Rgb;
+import dev.shadr.core.config.EditorWebConfig;
+import dev.shadr.core.cursor.CursorPredictor;
+import dev.shadr.core.editor.EditorLauncher;
+import dev.shadr.core.editor.EditorServer;
+import dev.shadr.core.editor.FileDocumentSource;
+import dev.shadr.core.page.EffectDef;
+import dev.shadr.core.page.Page;
+import dev.shadr.core.page.PageLoader;
+import dev.shadr.core.hud.PageRenderer;
+import dev.shadr.core.session.UiSession;
+import dev.shadr.core.shader.EnvironmentSettings;
+import dev.shadr.core.shader.EnvironmentSource;
+import dev.shadr.core.shader.ShaderApi;
+import dev.shadr.core.shader.ShaderLoader;
+import dev.shadr.core.spi.WorldAnchor;
+import dev.shadr.minestom.MinestomBridge;
+import net.kyori.adventure.text.Component;
+import net.minestom.server.MinecraftServer;
+import net.minestom.server.coordinate.Pos;
+import net.minestom.server.entity.GameMode;
+import net.minestom.server.entity.Player;
+import net.minestom.server.event.GlobalEventHandler;
+import net.minestom.server.event.player.AsyncPlayerConfigurationEvent;
+import net.minestom.server.event.player.PlayerSpawnEvent;
+import net.minestom.server.instance.InstanceContainer;
+import net.minestom.server.instance.LightingChunk;
+import net.minestom.server.instance.block.Block;
+import net.minestom.server.command.builder.Command;
+import net.minestom.server.timer.TaskSchedule;
+
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+
+public final class Server {
+
+    private static final int MC_PORT = 25565;
+    private static final int HTTP_PORT = 25566;
+    private static final Path PACK_DIR = Path.of("out", "pack");
+    private static final Path REPO_ROOT = Path.of(".");
+
+    private static final long LINK_TTL_MILLIS = 30L * 60 * 1000;
+
+    private static InstanceContainer instance;
+    private static MinestomBridge bridge;
+
+    private static Page demoPage;
+    private static PageRenderer renderer;
+    private static Map<String, EffectDef> effects = Map.of();
+
+    private static final Map<String, UiSession> sessions = new HashMap<>();
+
+    private static EditorServer editorServer;
+    private static int shaderHandleCounter;
+
+    private static final ShaderLoader SHADERS =
+            new ShaderLoader(REPO_ROOT.resolve("shaders/items").toFile());
+
+    private static ShaderApi shaderApi;
+
+    public static void main(String[] args) throws Exception {
+        loadPage();
+
+        final byte[] packZip = zipDirContents(resolvePackDir());
+        final String sha1Hex = sha1Hex(packZip);
+        final String packUrl = "http://127.0.0.1:" + HTTP_PORT + "/pack-" + sha1Hex + ".zip";
+        startPackHost(packZip);
+        System.out.println("[shadr] hosting pack (" + packZip.length + " bytes, sha1=" + sha1Hex + ") at " + packUrl);
+
+        final MinecraftServer server = MinecraftServer.init();
+        instance = MinecraftServer.getInstanceManager().createInstanceContainer();
+        instance.setChunkSupplier(LightingChunk::new);
+        instance.setGenerator(unit -> unit.modifier().fillHeight(0, 40, Block.GRASS_BLOCK));
+        instance.setTime(6000);
+
+        bridge = new MinestomBridge(name -> instance);
+        bridge.install();
+        shaderApi = new ShaderApi(bridge, SHADERS::load);
+
+        bridge.input().onSample(sample -> {
+            final UiSession session = sessions.get(sample.getPlayer().getUuid());
+            if (session == null) return kotlin.Unit.INSTANCE;
+            final var mapper = bridge.inputSource().mapperFor(sample.getPlayer());
+            final boolean changed = session.update(
+                    sample.getCursor(),
+                    mapper == null ? 0.0 : mapper.getDeltaX(),
+                    mapper == null ? 0.0 : mapper.getDeltaY(),
+                    sample.getPingMillis());
+            boolean clicked = false;
+            if (sample.getLeftClick() || sample.getRightClick()) {
+                session.click(sample.getRightClick());
+                clicked = true;
+            }
+            if (changed || clicked) bridge.hud().apply(sample.getPlayer(), session.draws());
+            return kotlin.Unit.INSTANCE;
+        });
+
+        final GlobalEventHandler events = MinecraftServer.getGlobalEventHandler();
+        events.addListener(AsyncPlayerConfigurationEvent.class, event -> {
+            event.setSpawningInstance(instance);
+            event.getPlayer().setRespawnPoint(new Pos(0, 42, 0));
+        });
+        events.addListener(PlayerSpawnEvent.class, event -> {
+            final Player player = event.getPlayer();
+            player.setGameMode(GameMode.CREATIVE);
+            bridge.pack().send(
+                    new PlayerId(player.getUuid().toString()), packUrl, hexToBytes(sha1Hex), true);
+            player.sendMessage(Component.text(
+                    "shadr: /ui to open the demo page, /editor for a browser link."));
+        });
+
+        registerCommands();
+        startEditor();
+
+        server.start("0.0.0.0", MC_PORT);
+        System.out.println("[shadr] server up on :" + MC_PORT + ". Join with 26.2.");
+    }
+
+    private static void openUi(Player player) {
+        final PlayerId id = new PlayerId(player.getUuid().toString());
+        bridge.inputSource().useScreen(
+                demoPage.getScreen().getWidth(),
+                demoPage.getScreen().getHeight(),
+                demoPage.getScreen().getCursorSpeed());
+
+        bridge.cameraControl().start(id, () -> {
+            bridge.inputSource().resetMapper(id);
+            bridge.hud().mount(id);
+
+            final UiSession session = new UiSession(
+                    id,
+                    demoPage,
+                    renderer,
+                    effects,
+                    new dev.shadr.core.action.ActionRunner(new LoggingActionHost()),
+                    new CursorPredictor());
+            sessions.put(id.getUuid(), session);
+            bridge.hud().apply(id, session.draws());
+            System.out.println("[shadr] UI open for " + player.getUsername());
+        });
+    }
+
+    private static void closeUi(Player player) {
+        final PlayerId id = new PlayerId(player.getUuid().toString());
+        sessions.remove(id.getUuid());
+        bridge.forget(id);
+    }
+
+    private static void registerCommands() {
+        final var manager = MinecraftServer.getCommandManager();
+
+        final var ui = new Command("ui");
+        ui.setDefaultExecutor((sender, ctx) -> {
+            if (!(sender instanceof Player player)) return;
+            if (sessions.containsKey(player.getUuid().toString())) {
+                closeUi(player);
+                player.sendMessage(Component.text("shadr: UI closed."));
+            } else {
+                openUi(player);
+                player.sendMessage(Component.text("shadr: UI open."));
+            }
+        });
+        manager.register(ui);
+
+        final var editor = new Command("editor");
+        editor.setDefaultExecutor((sender, ctx) -> {
+            if (editorServer == null) {
+                sender.sendMessage(Component.text("shadr: editor is not running."));
+                return;
+            }
+            final String label = sender instanceof Player p ? p.getUuid().toString() : "console";
+            editorServer.revokeIssued(label);
+            final String url = editorServer.mintUrl(label, LINK_TTL_MILLIS, null);
+            final String link = url != null ? url : editorServer.url();
+            sender.sendMessage(Component.text("shadr: click meh!")
+                    .clickEvent(net.kyori.adventure.text.event.ClickEvent.openUrl(link))
+                    .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(Component.text(link))));
+        });
+        manager.register(editor);
+
+        final var shader = new Command("shader");
+        shader.setDefaultExecutor((sender, ctx) -> {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(Component.text("players only."));
+                return;
+            }
+            final String[] parts = ctx.getInput().trim().split("\\s+");
+
+            if (parts.length < 2 || parts[1].equalsIgnoreCase("list")) {
+                sender.sendMessage(Component.text("shadr shaders: " + shaderApi.shaders().stream()
+                        .map(dev.shadr.core.shader.ShaderDef::getId)
+                        .reduce((a, b) -> a + ", " + b).orElse("none")
+                        + "  |  placed: " + String.join(", ",
+                            shaderApi.placed().isEmpty() ? List.of("none") : shaderApi.placed())));
+                return;
+            }
+            if (parts[1].equalsIgnoreCase("clear")) {
+                sender.sendMessage(Component.text(
+                        "shadr: removed " + shaderApi.despawnAll() + " shader display(s)."));
+                return;
+            }
+
+            final String id = parts[1].toLowerCase();
+            final double scale = parts.length > 2 ? parseDouble(parts[2], 2.0) : 2.0;
+            final Pos at = player.getPosition()
+                    .add(player.getPosition().direction().mul(Math.max(2.0, scale * 1.5)))
+                    .withY(player.getPosition().y() + player.getEyeHeight());
+
+            final String handle = player.getUsername() + "_" + id + "_" + (++shaderHandleCounter);
+            final String failure = shaderApi.spawn(
+                    handle, id, new WorldAnchor("world", at.x(), at.y(), at.z()),
+                    scale, Rgb.Companion.getWHITE(),
+                    dev.shadr.core.spi.BillboardMode.CENTER, 1000f);
+
+            sender.sendMessage(Component.text(failure != null
+                    ? "shadr: " + failure
+                    : "shadr: placed '" + id + "' as '" + handle + "'; /shader clear to remove."));
+        });
+        manager.register(shader);
+    }
+
+    private static double parseDouble(String raw, double fallback) {
+        try {
+            return Double.parseDouble(raw);
+        } catch (NumberFormatException notANumber) {
+            return fallback;
+        }
+    }
+
+    private static void startEditor() {
+        final boolean insecure = Boolean.getBoolean("shadr.editor.insecure");
+        editorServer = EditorLauncher.INSTANCE.start(
+                new EditorWebConfig(
+                        true,
+                        EditorServer.DEFAULT_PORT,
+                        "127.0.0.1",
+                        "",
+                        insecure,
+                        "",
+                        REPO_ROOT.resolve("editor/build/web").toAbsolutePath().toString(),
+                        "", "", ""),
+                Path.of("out").toFile(),
+                new FileDocumentSource(
+                        REPO_ROOT.resolve("protocol/pages").toFile(),
+                        REPO_ROOT.resolve("protocol/components").toFile(),
+                        REPO_ROOT.resolve("protocol/effects").toFile()),
+                edited -> {
+                    demoPage = edited;
+                    for (Map.Entry<String, UiSession> open : sessions.entrySet()) {
+                        open.getValue().refreshPage(edited);
+                        bridge.hud().apply(new PlayerId(open.getKey()), open.getValue().draws());
+                    }
+                    return kotlin.Unit.INSTANCE;
+                },
+                SHADERS,
+                new EnvironmentSettings(REPO_ROOT.resolve("shaders/environment.properties").toFile()),
+                new EnvironmentSource(REPO_ROOT.resolve("shaders").toFile()),
+                () -> false,
+                line -> {
+                    System.out.println("[shadr] " + line);
+                    return kotlin.Unit.INSTANCE;
+                });
+    }
+
+    private static void loadPage() {
+        final PageLoader loader = new PageLoader(
+                REPO_ROOT.resolve("protocol/pages").toFile(),
+                REPO_ROOT.resolve("protocol/components").toFile(),
+                REPO_ROOT.resolve("protocol/effects").toFile());
+        effects = loader.loadEffects();
+        demoPage = loader.loadPage(
+                REPO_ROOT.resolve("protocol/pages/demo.yml").toFile(),
+                loader.loadComponents());
+        loader.getIssues().forEach(issue -> System.out.println("[shadr] page issue: " + issue));
+        if (demoPage == null) throw new IllegalStateException("protocol/pages/demo.yml did not load");
+        renderer = new PageRenderer();
+        System.out.println("[shadr] demo page: " + demoPage.getElements().size() + " element(s)");
+    }
+
+    private static final class LoggingActionHost implements dev.shadr.core.action.ActionHost {
+        @Override public void runAsPlayer(PlayerId player, String command) { log("command", command); }
+        @Override public void runAsConsole(String command) { log("console", command); }
+        @Override public void message(PlayerId player, String text) { log("message", text); }
+        @Override public void playSound(PlayerId player, String sound, double volume) {
+            final Player target = MinecraftServer.getConnectionManager()
+                    .getOnlinePlayerByUuid(UUID.fromString(player.getUuid()));
+            if (target == null) return;
+            target.playSound(net.kyori.adventure.sound.Sound.sound()
+                    .type(net.kyori.adventure.key.Key.key(sound.toLowerCase()))
+                    .volume((float) volume)
+                    .pitch(1f)
+                    .build());
+        }
+        @Override public void closePage(PlayerId player) {
+            final Player target = MinecraftServer.getConnectionManager()
+                    .getOnlinePlayerByUuid(UUID.fromString(player.getUuid()));
+            if (target != null) closeUi(target);
+        }
+        @Override public void openPage(PlayerId player, String page, boolean replacing) { log("open", page); }
+        @Override public void teleport(PlayerId player, String destination) { log("teleport", destination); }
+        @Override public boolean hasPermission(PlayerId player, String permission) { return true; }
+        @Override public void scheduleTicks(long ticks, kotlin.jvm.functions.Function0<kotlin.Unit> task) {
+            MinecraftServer.getSchedulerManager()
+                    .buildTask(task::invoke)
+                    .delay(TaskSchedule.tick((int) ticks))
+                    .schedule();
+        }
+        @Override public String resolvePlaceholders(PlayerId player, String text) { return text; }
+
+        private static void log(String verb, String argument) {
+            System.out.println("[shadr] action " + verb + (argument.isEmpty() ? "" : ": " + argument));
+        }
+    }
+
+    private static Path resolvePackDir() {
+        if (Files.isDirectory(PACK_DIR)) return PACK_DIR;
+        throw new IllegalStateException(
+                "no pack at " + PACK_DIR.toAbsolutePath() + ", run:\n"
+                        + "  ./gradlew :resourcepack:run --args=\"$PWD/shaders $PWD/out/pack "
+                        + "$PWD/assets/font $PWD/assets/shadr/sounds\"");
+    }
+
+    private static byte[] zipDirContents(Path dir) throws IOException {
+        final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        try (ZipOutputStream zip = new ZipOutputStream(buffer); Stream<Path> walk = Files.walk(dir)) {
+            final List<Path> files = walk.filter(Files::isRegularFile).sorted().toList();
+            for (Path file : files) {
+                final ZipEntry entry = new ZipEntry(dir.relativize(file).toString().replace('\\', '/'));
+                entry.setTime(0L);
+                zip.putNextEntry(entry);
+                zip.write(Files.readAllBytes(file));
+                zip.closeEntry();
+            }
+        }
+        return buffer.toByteArray();
+    }
+
+    private static String sha1Hex(byte[] bytes) throws Exception {
+        return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-1").digest(bytes));
+    }
+
+    private static byte[] hexToBytes(String hex) {
+        return java.util.HexFormat.of().parseHex(hex);
+    }
+
+    private static void startPackHost(byte[] payload) throws IOException {
+        final HttpServer http = HttpServer.create(new InetSocketAddress("0.0.0.0", HTTP_PORT), 0);
+        http.createContext("/", exchange -> {
+            exchange.getResponseHeaders().add("Content-Type", "application/zip");
+            exchange.sendResponseHeaders(200, payload.length);
+            exchange.getResponseBody().write(payload);
+            exchange.close();
+        });
+        http.setExecutor(null);
+        http.start();
+    }
+}

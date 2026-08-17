@@ -1,0 +1,70 @@
+/*
+ * Shadr
+ *
+ * Copyright © 2026 theDevJade. All rights reserved.
+ *
+ * Part of the Shadr project.
+ * See LICENSE for licensing and distribution terms.
+ */
+package dev.shadr.paper.nms;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+import org.bukkit.Bukkit;
+
+public final class PacketBackends {
+
+    private static final Map<String, String> MODULES = new LinkedHashMap<>();
+
+    static {
+        MODULES.put("1.21", "v1_21_1");
+        MODULES.put("1.21.1", "v1_21_1");
+        MODULES.put("1.21.2", "v1_21_4");
+        MODULES.put("1.21.3", "v1_21_4");
+        MODULES.put("1.21.4", "v1_21_4");
+        MODULES.put("1.21.5", "v1_21_5");
+        MODULES.put("1.21.6", "v1_21_8");
+        MODULES.put("1.21.7", "v1_21_8");
+        MODULES.put("1.21.8", "v1_21_8");
+        MODULES.put("1.21.9", "v1_21_11");
+        MODULES.put("1.21.10", "v1_21_11");
+        MODULES.put("1.21.11", "v1_21_11");
+    }
+
+    private PacketBackends() {}
+
+    public static String moduleFor(String minecraftVersion) {
+        String v = minecraftVersion.trim();
+        String exact = MODULES.get(v);
+        if (exact != null) return exact;
+        if (v.startsWith("26.1") || v.startsWith("26.0")) return "v26_1";
+        if (v.startsWith("26.")) return "v26_2";
+        if (v.startsWith("1.21")) return "v1_21_11";
+        return null;
+    }
+
+    public static String serverVersion() {
+        try {
+            return (String) Bukkit.class.getMethod("getMinecraftVersion").invoke(null);
+        } catch (ReflectiveOperationException ignored) {
+            String bukkit = Bukkit.getBukkitVersion();
+            int dash = bukkit.indexOf('-');
+            return dash > 0 ? bukkit.substring(0, dash) : bukkit;
+        }
+    }
+
+    public static PacketBackend load() {
+        String version = serverVersion();
+        String module = moduleFor(version);
+        if (module == null) {
+            throw new IllegalStateException("shadr has no packet backend for Minecraft " + version);
+        }
+        try {
+            Class<?> type = Class.forName("dev.shadr.paper.nms." + module + ".NmsPacketBackend");
+            return (PacketBackend) type.getDeclaredConstructor().newInstance();
+        } catch (ReflectiveOperationException | LinkageError failure) {
+            throw new IllegalStateException(
+                    "shadr could not load its " + module + " packet backend on Minecraft " + version, failure);
+        }
+    }
+}

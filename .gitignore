@@ -1,0 +1,32 @@
+# JVM / Gradle
+.gradle/
+build/
+*.class
+!gradle-wrapper.jar
+local.properties
+
+# Kotlin
+.kotlin/
+
+# macOS / IDE
+.DS_Store
+.idea/
+*.iml
+.vscode/
+
+# generated packs / scratch
+/out/
+resourcepack/out/
+dist/
+/*.zip
+
+# running
+run/
+logs/
+*.log
+world/
+world_nether/
+world_the_end/
+eula.txt
+
+.env

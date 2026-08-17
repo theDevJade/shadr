@@ -1,0 +1,77 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.1.0-rc.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Derive the version from the tag
+        id: version
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          if [[ "$TAG" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT";
+          else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Build
+        run: >
+          ./gradlew build
+          -PshadrVersion=${{ steps.version.outputs.version }}
+          --no-daemon
+
+      - name: Build the resource pack
+        run: >
+          ./gradlew :resourcepack:run
+          -PshadrVersion=${{ steps.version.outputs.version }}
+          --no-daemon
+          --args="$PWD/shaders $PWD/out/pack $PWD/assets/font $PWD/assets/shadr/sounds"
+
+      - name: Collect assets and checksums
+        id: assets
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          VERSION="${{ steps.version.outputs.version }}"
+
+          JAR="platform-paper/build/libs/shadr-paper-$VERSION.jar"
+          test -f "$JAR" || { echo "::error::expected $JAR; got:"; ls -R platform-paper/build/libs; exit 1; }
+          cp "$JAR" dist/
+
+          if [ -f out/shadr-pack.zip ]; then cp out/shadr-pack.zip "dist/shadr-pack-$VERSION.zip"; fi
+
+          cd dist
+          for f in *; do sha256sum "$f" > "$f.sha256"; done
+          ls -l
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${{ steps.version.outputs.tag }}"
+          dist/*
+          --title "shadr ${{ steps.version.outputs.version }}"
+          --generate-notes
+          ${{ steps.version.outputs.prerelease == 'true' && '--prerelease' || '' }}

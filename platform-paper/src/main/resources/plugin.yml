@@ -1,0 +1,33 @@
+name: shadr
+version: '${version}'
+main: dev.shadr.paper.ShadrPlugin
+api-version: '1.21'
+# Soft: shadr runs perfectly well without it, and only gains the ability to resolve other
+# plugins' placeholders in page text when it is present. Declared so the server enables
+# PlaceholderAPI first, because the check in PapiPlaceholders runs during shadr's own onEnable.
+softdepend: [PlaceholderAPI]
+folia-supported: false
+description: Screen-space UI built from display entities and font glyphs.
+
+commands:
+  shadr:
+    description: Open, close, and reload shadr pages.
+    usage: /shadr <open|close|reload|pack|pages|shader|editor|update>
+    permission: shadr.command
+
+permissions:
+  shadr.command:
+    description: Use /shadr.
+    default: op
+  shadr.shader:
+    description: Place custom shaders in the world with /shadr shader. Spawns entities,
+      so it is a separate grant from the rest of the command.
+    default: op
+  shadr.editor:
+    description: Request a link to the browser editor. This grants write access to
+      every page on the server, so it is op-only by default.
+    default: op
+  shadr.update:
+    description: See update notices on join and use /shadr update. Staging an update
+      changes what the server runs after its next restart, so it is op-only.
+    default: op
