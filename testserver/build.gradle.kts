@@ -17,7 +17,7 @@ dependencies {
     implementation("org.yaml:snakeyaml:2.2")
     implementation("net.kyori:adventure-text-minimessage:4.24.0")
 
-    implementation("org.slf4j:slf4j-simple:2.0.16")
+    implementation("org.slf4j:slf4j-simple:2.0.18")
 }
 
 application {
