@@ -4,7 +4,7 @@
 [![release](https://img.shields.io/github/v/release/theDevJade/shadr?include_prereleases&sort=semver)](https://github.com/theDevJade/shadr/releases)
 [![licence](https://img.shields.io/badge/licence-Apache--2.0-lightgrey)](LICENSE)
 
-shadr uses core shader magic, math, and logic to render UI to vanilla clients.
+shadr uses core shader magic, math, and logic to render UI to vanilla clients. On top of that, shadr is capable of rendering shadertoy-esque shaders as displays entities. This allows custom worldspace objects.
 
 You write a page in YAML, or in the editor:
 
@@ -49,6 +49,14 @@ Run `./gradlew spotlessApply` for everything, it will throw otherwise.
 ## AI Notice
 
 Some of this codebase was generated and edited with local AI, mainly the tests. Local AI was also used for debugging and to check my math.
+
+## Screenshots
+
+Both of these are shaders hung in the world as display entities, on a vanilla client with no mods.
+
+![A black hole above a grass field, its accretion disc lensed into a ring around the event horizon](screenshots/blackhole_screenshot.png)
+
+![A cloud-covered planet rendered as a sphere, floating over the ground](screenshots/planet_screenshot.png)
 
 ## Licence
 
