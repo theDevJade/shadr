@@ -23,7 +23,7 @@ import java.util.UUID
 
 class PaperCamera(
     private val plugin: Plugin,
-    private val frostedGlass: () -> Boolean = { false },
+    private val postEffects: () -> Boolean = { false },
 ) : CameraControl {
     private class Session(
         val eye: Entity,
@@ -43,7 +43,7 @@ class PaperCamera(
 
         val origin = bukkit.location.clone()
         val eyeLocation = origin.clone().add(0.0, CAMERA_BASE_Y_OFFSET, 0.0)
-        val eye = if (frostedGlass()) spawnPostEffectCamera(bukkit, eyeLocation)
+        val eye = if (postEffects()) spawnPostEffectCamera(bukkit, eyeLocation)
         else spawnMarker(bukkit, eyeLocation)
         val seat = spawnMarker(bukkit, eyeLocation.clone().add(0.0, CAMERA_SEAT_Y_OFFSET, 0.0))
 

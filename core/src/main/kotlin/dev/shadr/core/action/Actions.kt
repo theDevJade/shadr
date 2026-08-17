@@ -51,6 +51,8 @@ interface ActionHost {
     fun runAsConsole(command: String)
     fun message(player: PlayerId, text: String)
     fun playSound(player: PlayerId, sound: String, volume: Double = 1.0)
+
+    fun stopSound(player: PlayerId, sound: String) = Unit
     fun closePage(player: PlayerId)
     fun openPage(player: PlayerId, page: String, replacing: Boolean)
     fun teleport(player: PlayerId, destination: String)

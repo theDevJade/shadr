@@ -164,6 +164,9 @@ class PaperHudSink(private val plugin: Plugin) : HudSink {
         val material = Registry.MATERIAL.get(key) ?: return null
         val stack = ItemStack(material)
 
+        draw.itemModel?.let { model ->
+            NamespacedKey.fromString(model)?.let { stack.setData(DataComponentTypes.ITEM_MODEL, it) }
+        }
         draw.itemCustomModelData?.let { bucket ->
             stack.setData(
                 DataComponentTypes.CUSTOM_MODEL_DATA,

@@ -58,7 +58,7 @@ class EnvironmentSettingsTest {
     @Test
     fun `the ids are the ones the pack and the editor agree on`() {
         assertEquals(
-            listOf("sky", "clouds", "celestials", "blur"),
+            listOf("sky", "clouds", "celestials", "blur", "video"),
             EnvironmentEffect.entries.map { it.id },
         )
         for (effect in EnvironmentEffect.entries) {

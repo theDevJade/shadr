@@ -74,7 +74,10 @@ class ShadrPlugin : JavaPlugin() {
 
         bridge = PaperBridge(
             this,
-            frostedGlass = { environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS) },
+            postEffects = {
+                environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS) ||
+                    environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.VIDEO)
+            },
         )
         server.pluginManager.registerEvents(bridge, this)
 
@@ -182,6 +185,27 @@ class ShadrPlugin : JavaPlugin() {
     @Volatile
     private var lastAtlas = UiImageAtlas.BuildResult(emptyMap(), emptyList())
 
+    private var videoCacheKey: String? = null
+
+    @Volatile
+    private var videoCache: List<dev.shadr.pack.VideoAssets.Source> = emptyList()
+
+    private fun videoSources(): List<dev.shadr.pack.VideoAssets.Source> {
+        val dir = File(File(dataFolder, "contents"), dev.shadr.pack.VideoLibrary.FOLDER)
+        val key = dir.walkTopDown()
+            .filter { it.isFile }
+            .sortedBy { it.path }
+            .joinToString(";") { "${it.path}:${it.length()}:${it.lastModified()}" }
+
+        if (key == videoCacheKey) return videoCache
+
+        val result = dev.shadr.pack.VideoLibrary(File(dataFolder, "contents")).load()
+        result.issues.forEach { logger.warning("video: $it") }
+        videoCacheKey = key
+        videoCache = result.sources
+        return result.sources
+    }
+
     private fun rebuildPack() = synchronized(packBuildLock) {
         val packRoot = File(dataFolder, "resourcepack/pack")
         PackGenerator(
@@ -192,6 +216,7 @@ class ShadrPlugin : JavaPlugin() {
                 shaderLoader.issues.forEach { logger.warning("shader: $it") }
             },
             environment = environment.all(),
+            videos = videoSources(),
         ).build(packRoot)
 
         val atlas = UiImageAtlas(

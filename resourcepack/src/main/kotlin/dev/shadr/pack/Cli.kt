@@ -14,6 +14,18 @@ fun main(args: Array<String>) {
     val outDir = File(positional.getOrElse(1) { "out/pack" })
     val fontDir = File(positional.getOrElse(2) { "assets/font" })
     val soundDir = File(positional.getOrElse(3) { "assets/shadr/sounds" })
+    val contentsDir = File(positional.getOrElse(4) { "contents" })
+
+    fun flag(name: String, fallback: Double): Double =
+        args.firstOrNull { it.startsWith("--$name=") }?.substringAfter('=')?.toDoubleOrNull() ?: fallback
+
+    val videos = VideoLibrary(
+        contentsDir = contentsDir,
+        fps = flag("video-fps", 30.0),
+        maxSeconds = flag("video-seconds", dev.shadr.pack.VideoImport.WHOLE_SOURCE),
+        quality = flag("video-quality", 24.0).toInt(),
+    ).load()
+    videos.issues.forEach { println("  video: $it") }
 
     val shaderLoader = dev.shadr.core.shader.ShaderLoader(File(shaderSrc, "items"))
     val shaders = shaderLoader.load()
@@ -28,12 +40,19 @@ fun main(args: Array<String>) {
         shapeSupport = args.contains("--shapes"),
         shaders = shaders,
         environment = environment.all(),
+        videos = videos.sources,
     )
     val root = generator.build(outDir)
     println("pack tree -> ${root.path}")
     println("shapes    -> " + if (args.contains("--shapes")) "enabled (overrides core/item)" else "off")
     println("shaders   -> ${shaders.shaders.size}" + if (shaders.isEmpty) "" else ": " + shaders.shaders.joinToString { it.id })
     println("world     -> " + environment.all().filterValues { it }.keys.joinToString { it.id }.ifEmpty { "vanilla (no overrides)" })
+    println(
+        "videos    -> " + videos.sources.joinToString {
+            "${it.clip.id} (${it.clip.width}x${it.clip.height}, " +
+                "${it.clip.frameCount}f @ ${it.clip.fps}fps)"
+        }.ifEmpty { "none" },
+    )
     for (overlay in PackOverlay.entries) {
         println("  overlay ${overlay.directory}  formats ${overlay.minFormat}..${overlay.maxFormat}  (${overlay.label})")
     }

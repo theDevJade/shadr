@@ -32,24 +32,27 @@ object ItemShaderAssets {
         }
     }
 
-    private fun writeMarkerTexture(root: File, shader: ShaderDef) {
+    fun markerTexture(alpha: Int, index: Int): BufferedImage {
         val image = BufferedImage(GRID, GRID * 2, BufferedImage.TYPE_INT_ARGB)
 
         for (y in 0 until GRID) {
             for (x in 0 until GRID) {
                 val u = ((x + 0.5) / GRID * 255.0).toInt().coerceIn(0, 255)
                 val v = ((y + 0.5) / GRID * 255.0).toInt().coerceIn(0, 255)
-                image.setRGB(x, y, argb(POSITION_ALPHA, u, v, shader.index))
+                image.setRGB(x, y, argb(alpha, u, v, index))
                 image.setRGB(
                     x, y + GRID,
-                    argb(ShaderDef.MARKER_A, ShaderDef.MARKER_R, ShaderDef.MARKER_G, shader.index),
+                    argb(ShaderDef.MARKER_A, ShaderDef.MARKER_R, ShaderDef.MARKER_G, index),
                 )
             }
         }
+        return image
+    }
 
+    private fun writeMarkerTexture(root: File, shader: ShaderDef) {
         val file = File(root, "$TEXTURE_DIR/shader_${shader.id}.png")
         file.parentFile.mkdirs()
-        ImageIO.write(image, "PNG", file)
+        ImageIO.write(markerTexture(POSITION_ALPHA, shader.index), "PNG", file)
     }
 
     private fun writeModel(root: File, shader: ShaderDef) {

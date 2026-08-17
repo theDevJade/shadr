@@ -241,6 +241,7 @@ class TemplateResolver(
             mirrorX = mirrorX || node.bool("mirrorX"),
             mirrorY = mirrorY || node.bool("mirrorY"),
             item = node.string("shader").takeIf { type == ElementType.SHADER }
+                ?: node.string("video").takeIf { type == ElementType.VIDEO }
                 ?: node.string("item", "itemDisplay", "itemDisplayBlock"),
             itemCustomModelData = node.string("customModelData", "item.customModelData")?.toIntOrNull(),
             playerHeadText = node.bool("playerHeadText"),
