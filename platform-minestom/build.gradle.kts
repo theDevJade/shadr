@@ -23,7 +23,7 @@ dependencies {
     api("org.jetbrains.kotlin:kotlin-stdlib:2.0.21")
     api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     api("org.yaml:snakeyaml:2.2")
-    api("net.kyori:adventure-text-minimessage:4.24.0")
+    api("net.kyori:adventure-text-minimessage:5.2.0")
 }
 
 // Java rather than Kotlin, for the same reason this build is separate: Minestom's class files
