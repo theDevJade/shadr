@@ -6,8 +6,15 @@ import 'model.dart';
 import 'protocol.dart';
 import 'theme.dart';
 
-class PropertiesPanel extends StatelessWidget {
+class PropertiesPanel extends StatefulWidget {
   const PropertiesPanel({super.key});
+
+  @override
+  State<PropertiesPanel> createState() => _PropertiesPanelState();
+}
+
+class _PropertiesPanelState extends State<PropertiesPanel> {
+  int _tab = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -23,18 +30,166 @@ class PropertiesPanel extends StatelessWidget {
           : Text(selected.type.toLowerCase(), style: context.texts.labelSmall),
       child: snapshot == null
           ? const SizedBox.shrink()
-          : ListView(
-              padding: const EdgeInsets.only(bottom: Insets.lg),
+          : Column(
               children: [
-                if (snapshot.issues.isNotEmpty) _Issues(issues: snapshot.issues),
-                if (selected == null)
-                  _NoSelection(count: count)
-                else
-                  ..._fields(context, model, selected),
-                _AddSection(onAdd: model.addElement),
+                if (selected != null)
+                  _Tabs(
+                    labels: const ['Design', 'Interact'],
+                    selected: _tab,
+                    onSelected: (i) => setState(() => _tab = i),
+                  ),
+                Expanded(
+                  child: Scrollbar(
+                    child: ListView(
+                      primary: true,
+                      padding: const EdgeInsets.only(bottom: Insets.lg),
+                      children: [
+                        if (snapshot.issues.isNotEmpty) _Issues(issues: snapshot.issues),
+                        if (selected == null)
+                          _NoSelection(count: count)
+                        else if (_tab == 0)
+                          ..._fields(context, model, selected)
+                        else
+                          ..._interaction(context, model, selected),
+                        if (selected == null || _tab == 0)
+                          _AddSection(onAdd: model.addElement),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
     );
+  }
+
+  List<Widget> _interaction(BuildContext context, EditorModel model, Element element) {
+    final lock = model.lockReason(element.id);
+    final editable = lock == null && !model.isPreviewing;
+    final it = element.interaction;
+
+    void set(String path, String value) => model.patchOne(element.id, path, value);
+
+    return [
+      if (lock != null) _LockBanner(reason: lock),
+      if (!it.actionable && element.type != 'HITBOX')
+        const _Hint(
+          'Nothing is bound yet, so this element lets hovers and clicks pass through to '
+          'whatever is behind it.',
+        ),
+      Section(
+        title: 'On click',
+        children: [
+          _ActionField(
+            value: it.onClick,
+            enabled: editable,
+            onCommit: (v) => set('interaction.onClick', v),
+          ),
+          const _Hint('One action per line, as `verb argument`. For example `sound shadr.click`.'),
+        ],
+      ),
+      Section(
+        title: 'On left click',
+        children: [
+          _ActionField(
+            value: it.onLeftClick,
+            enabled: editable,
+            onCommit: (v) => set('interaction.onLeftClick', v),
+          ),
+        ],
+      ),
+      Section(
+        title: 'On right click',
+        children: [
+          _ActionField(
+            value: it.onRightClick,
+            enabled: editable,
+            onCommit: (v) => set('interaction.onRightClick', v),
+          ),
+        ],
+      ),
+      Section(
+        title: 'Feedback',
+        children: [
+          PropertyRow(
+            label: 'Hover text',
+            child: ValueField(
+              value: it.hoverText,
+              enabled: editable,
+              hint: 'shown on hover',
+              onCommit: (v) => set('interaction.hoverText', v),
+            ),
+          ),
+          PropertyRow(
+            label: 'Hover fx',
+            child: ValueField(
+              value: it.hoverEffect,
+              enabled: editable,
+              hint: 'effect id',
+              onCommit: (v) => set('interaction.hoverEffect', v),
+            ),
+          ),
+          PropertyRow(
+            label: 'Click fx',
+            child: ValueField(
+              value: it.clickEffect,
+              enabled: editable,
+              hint: 'effect id',
+              onCommit: (v) => set('interaction.clickEffect', v),
+            ),
+          ),
+        ],
+      ),
+      Section(
+        title: 'Hitbox',
+        children: [
+          PropertyRow(
+            label: 'Enabled',
+            child: ChoiceField<bool>(
+              value: it.interactive && !it.disableHitbox,
+              enabled: editable,
+              options: const [
+                (value: true, icon: Icons.touch_app, label: 'On'),
+                (value: false, icon: Icons.do_not_touch, label: 'Off'),
+              ],
+              onChanged: (v) => set('interaction.disableHitbox', '${!v}'),
+            ),
+          ),
+          PropertyRow(
+            label: 'Offset',
+            child: Row(
+              children: [
+                Expanded(
+                  child: ScrubField(
+                    label: 'x',
+                    value: 0,
+                    enabled: editable,
+                    onChanged: (v) => set('interaction.hitboxOffsetX', '$v'),
+                  ),
+                ),
+                const SizedBox(width: Insets.sm),
+                Expanded(
+                  child: ScrubField(
+                    label: 'y',
+                    value: 0,
+                    enabled: editable,
+                    onChanged: (v) => set('interaction.hitboxOffsetY', '$v'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PropertyRow(
+            label: 'Permission',
+            child: ValueField(
+              value: it.permission,
+              enabled: editable,
+              hint: 'none',
+              onCommit: (v) => set('interaction.permission', v),
+            ),
+          ),
+        ],
+      ),
+    ];
   }
 
   List<Widget> _fields(BuildContext context, EditorModel model, Element element) {
@@ -251,6 +406,71 @@ class PropertiesPanel extends StatelessWidget {
       ),
     ];
   }
+}
+
+class _Tabs extends StatelessWidget {
+  const _Tabs({required this.labels, required this.selected, required this.onSelected});
+
+  final List<String> labels;
+  final int selected;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Container(
+      decoration: BoxDecoration(
+        border: Border(bottom: BorderSide(color: tokens.border)),
+      ),
+      child: Row(
+        children: [
+          for (final (index, label) in labels.indexed)
+            Expanded(
+              child: InkWell(
+                onTap: () => onSelected(index),
+                child: Container(
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: index == selected ? tokens.accent : Colors.transparent,
+                        width: 2,
+                      ),
+                    ),
+                  ),
+                  child: Text(
+                    label,
+                    style: context.texts.bodySmall?.copyWith(
+                      color: index == selected ? tokens.accent : tokens.textSecondary,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionField extends StatelessWidget {
+  const _ActionField({required this.value, required this.enabled, required this.onCommit});
+
+  final List<String> value;
+  final bool enabled;
+  final ValueChanged<String> onCommit;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: Insets.md),
+        child: MultilineField(
+          value: value.join('\n'),
+          enabled: enabled,
+          hint: 'nothing bound',
+          onCommit: onCommit,
+        ),
+      );
 }
 
 class _NoSelection extends StatelessWidget {

@@ -98,6 +98,85 @@ class _ValueFieldState extends State<ValueField> {
       );
 }
 
+class MultilineField extends StatefulWidget {
+  const MultilineField({
+    super.key,
+    required this.value,
+    required this.onCommit,
+    this.enabled = true,
+    this.hint,
+  });
+
+  final String value;
+  final ValueChanged<String> onCommit;
+  final bool enabled;
+  final String? hint;
+
+  @override
+  State<MultilineField> createState() => _MultilineFieldState();
+}
+
+class _MultilineFieldState extends State<MultilineField> {
+  late final TextEditingController _controller = TextEditingController(text: widget.value);
+  late final FocusNode _focus = FocusNode()..addListener(_onFocusChange);
+
+  @override
+  void didUpdateWidget(MultilineField old) {
+    super.didUpdateWidget(old);
+    if (!_focus.hasFocus && widget.value != _controller.text) {
+      _controller.text = widget.value;
+    }
+  }
+
+  void _onFocusChange() {
+    if (!_focus.hasFocus && _controller.text != widget.value) widget.onCommit(_controller.text);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChange);
+    _focus.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 56, maxHeight: 132),
+      child: TextField(
+        controller: _controller,
+        focusNode: _focus,
+        enabled: widget.enabled,
+        maxLines: null,
+        expands: false,
+        keyboardType: TextInputType.multiline,
+        style: context.texts.bodyMedium?.copyWith(fontFamily: 'monospace'),
+        cursorWidth: 1,
+        cursorColor: tokens.accent,
+        decoration: InputDecoration(
+          hintText: widget.hint,
+          hintStyle: context.texts.bodySmall?.copyWith(color: tokens.textTertiary),
+          isDense: true,
+          filled: true,
+          fillColor: widget.enabled ? tokens.surfaceSunken : tokens.surface,
+          contentPadding: const EdgeInsets.all(Insets.sm),
+          border: _multilineBorder(tokens.border),
+          enabledBorder: _multilineBorder(tokens.border),
+          focusedBorder: _multilineBorder(tokens.accent),
+          disabledBorder: _multilineBorder(tokens.border),
+        ),
+      ),
+    );
+  }
+
+  OutlineInputBorder _multilineBorder(Color color) => OutlineInputBorder(
+        borderRadius: Corners.small,
+        borderSide: BorderSide(color: color),
+      );
+}
+
 class ScrubField extends StatefulWidget {
   const ScrubField({
     super.key,

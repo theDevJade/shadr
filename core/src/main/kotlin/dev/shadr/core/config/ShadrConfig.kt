@@ -41,6 +41,7 @@ data class ShadrConfig(
                 selfHostIp = node.string("resource-pack.hosting.self-host.server-ip") ?: "127.0.0.1",
                 selfHostPort = node.int("resource-pack.hosting.self-host.pack-port", fallback = 8123),
                 externalUrl = node.string("resource-pack.hosting.external-host.url"),
+                mergeInto = node.string("resource-pack.hosting.merge-only.merge-into"),
                 joinChat = node.bool("resource-pack.messages.chat.enabled"),
                 joinTitle = node.bool("resource-pack.messages.title.enabled", fallback = true),
                 joinSound = node.bool("resource-pack.messages.sound.enabled", fallback = true),
@@ -114,6 +115,7 @@ data class PackConfig(
     val selfHostIp: String = "127.0.0.1",
     val selfHostPort: Int = 8123,
     val externalUrl: String? = null,
+    val mergeInto: String? = null,
     val joinChat: Boolean = false,
     val joinTitle: Boolean = true,
     val joinSound: Boolean = true,
@@ -127,10 +129,15 @@ enum class HostingMode {
 
     EXTERNAL_HOST,
 
-    EXTERNAL_PACK;
+    EXTERNAL_PACK,
+
+    MERGE_ONLY;
+
+    val sends: Boolean get() = this != EXTERNAL_PACK && this != MERGE_ONLY
 
     companion object {
         fun from(node: Node): HostingMode = when {
+            node.bool("resource-pack.hosting.merge-only.enabled") -> MERGE_ONLY
             node.bool("resource-pack.hosting.external-pack.enabled") -> EXTERNAL_PACK
             node.bool("resource-pack.hosting.external-host.enabled") -> EXTERNAL_HOST
             node.bool("resource-pack.hosting.self-host.enabled") -> SELF_HOST

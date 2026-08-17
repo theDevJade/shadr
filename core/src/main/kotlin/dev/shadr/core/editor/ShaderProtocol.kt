@@ -109,3 +109,23 @@ data class RevertProgram(val path: String) : EditorMessage
 @Serializable
 @SerialName("setEnvironment")
 data class SetEnvironmentEffect(val id: String, val enabled: Boolean) : EditorMessage
+
+@Serializable
+data class ImageEntry(
+    val name: String,
+    val unicode: String,
+    val columns: Int = 1,
+    val rows: Int = 1,
+)
+
+@Serializable
+@SerialName("images")
+data class ImageList(val images: List<ImageEntry> = emptyList()) : EditorMessage
+
+@Serializable
+@SerialName("uploadImage")
+data class UploadImage(val name: String, val data: String) : EditorMessage
+
+@Serializable
+@SerialName("deleteImage")
+data class DeleteImage(val name: String) : EditorMessage

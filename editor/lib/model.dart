@@ -76,7 +76,7 @@ enum ResizeHandle {
   };
 }
 
-enum Workspace { ui, shaders }
+enum Workspace { ui, shaders, images }
 
 class EditorModel extends ChangeNotifier {
   EditorModel({required this.endpoint, EditorTransport Function()? connect})
@@ -114,6 +114,33 @@ class EditorModel extends ChangeNotifier {
     _workspace = next;
     notifyListeners();
   }
+
+  List<ImageEntry> _images = const [];
+  List<ImageEntry> get images => _images;
+
+  void uploadImage(String name, String base64Data) =>
+      _send(wire.uploadImage(name, base64Data));
+
+  void removeImage(String name) => _send(wire.deleteImage(name));
+
+  void insertImage(ImageEntry entry) {
+    final screen = _snapshot?.screen;
+    final centre = screen == null
+        ? const Offset(860, 500)
+        : _viewport.toDesign(viewportSize.center(Offset.zero));
+    _send(
+      wire.addElement(
+        'image',
+        centre.dx.roundToDouble() - 60,
+        centre.dy.roundToDouble() - 20,
+        width: entry.columns * 64,
+        height: entry.rows * 64,
+      ),
+    );
+    _pendingImage = entry;
+  }
+
+  ImageEntry? _pendingImage;
 
   ShaderCatalog _catalog = ShaderCatalog.empty;
   ShaderCatalog get catalog => _catalog;
@@ -308,6 +335,17 @@ class EditorModel extends ChangeNotifier {
         if (restore != null) open(restore);
       case 'snapshot':
         final next = PageSnapshot.fromJson(json);
+        final pending = _pendingImage;
+        if (pending != null) {
+          _pendingImage = null;
+          final added = next.elements.where((e) => e.type == 'IMAGE').lastOrNull;
+          if (added != null) {
+            _send(wire.patchElement(added.id, {
+              'font': 'uiimages',
+              'unicode': pending.unicode,
+            }));
+          }
+        }
         final changedDocument = _snapshot?.name != next.name;
         _snapshot = next;
         if (changedDocument) {
@@ -319,6 +357,11 @@ class EditorModel extends ChangeNotifier {
       case 'saved':
         _lastSave = SaveResult.fromJson(json);
         _message = _lastSave!.summary;
+        notifyListeners();
+      case 'images':
+        _images = ((json['images'] as List<dynamic>?) ?? const [])
+            .map((e) => ImageEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
         notifyListeners();
       case 'shaders':
         _catalog = ShaderCatalog.fromJson(json);

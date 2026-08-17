@@ -16,6 +16,7 @@ class EditorServer(
     private val environment: dev.shadr.core.shader.EnvironmentSettings? = null,
     private val environmentSource: dev.shadr.core.shader.EnvironmentSource? = null,
     private val onShadersChanged: () -> Boolean = { false },
+    private val images: ImageSource? = null,
     private val bindAddress: String = "0.0.0.0",
     private val auth: EditorAuth = EditorAuth.Token(EditorAuth.generateToken()),
     webRoot: java.io.File? = null,
@@ -37,6 +38,7 @@ class EditorServer(
         onOpen = { connection ->
             connection.send(encode(Welcome(documents = documents.list())))
             shaderList()?.let { connection.send(encode(it)) }
+            images?.let { connection.send(encode(ImageList(it.list()))) }
         },
         onMessage = { connection, text -> handle(connection, text) },
         onClose = { releasePreviewIfUnattended() },
@@ -246,6 +248,43 @@ class EditorServer(
                         connection.send(encode(ProgramSource(message.path, it, false)))
                     }
                     connection.send(encode(ShaderSaved(message.path, packRebuilt = rebuilt)))
+                }
+            }
+            is UploadImage -> {
+                val source = images
+                if (source == null) {
+                    connection.send(encode(EditorError("image uploads are not enabled on this server")))
+                } else {
+                    val refusal = ImageSource.validateName(message.name)
+                    val bytes = runCatching {
+                        java.util.Base64.getDecoder().decode(message.data)
+                    }.getOrNull()
+                    when {
+                        refusal != null -> connection.send(encode(EditorError(refusal)))
+                        bytes == null -> connection.send(encode(EditorError("that upload was not valid base64")))
+                        !ImageSource.looksLikePng(bytes) ->
+                            connection.send(encode(EditorError("only PNG images can be used")))
+                        else -> {
+                            val failure = source.write(message.name, bytes)
+                            if (failure != null) {
+                                connection.send(encode(EditorError(failure)))
+                            } else {
+                                val rebuilt = onShadersChanged()
+                                socket.broadcast(encode(ImageList(source.list())))
+                                connection.send(encode(ShaderSaved(message.name, packRebuilt = rebuilt)))
+                            }
+                        }
+                    }
+                }
+            }
+            is DeleteImage -> {
+                val source = images
+                if (source == null || !source.delete(message.name)) {
+                    connection.send(encode(EditorError("no such image: ${message.name}")))
+                } else {
+                    val rebuilt = onShadersChanged()
+                    socket.broadcast(encode(ImageList(source.list())))
+                    connection.send(encode(ShaderSaved(message.name, packRebuilt = rebuilt)))
                 }
             }
             is ReloadPage -> openRef?.let { open(connection, it) }

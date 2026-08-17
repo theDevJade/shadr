@@ -55,7 +55,6 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 public final class Server {
-
     private static final int MC_PORT = 25565;
     private static final int HTTP_PORT = 25566;
     private static final Path PACK_DIR = Path.of("out", "pack");
@@ -88,6 +87,9 @@ public final class Server {
     private static volatile String packUrl;
 
     private static final Object PACK_LOCK = new Object();
+
+    private static volatile dev.shadr.pack.UiImageAtlas.BuildResult lastAtlas =
+            new dev.shadr.pack.UiImageAtlas.BuildResult(java.util.Map.of(), java.util.List.of());
 
     public static void main(String[] args) throws Exception {
         loadPage();
@@ -287,6 +289,9 @@ public final class Server {
                 ENVIRONMENT,
                 new EnvironmentSource(REPO_ROOT.resolve("shaders").toFile()),
                 Server::rebuildPack,
+                new dev.shadr.pack.AtlasImageSource(
+                        REPO_ROOT.resolve("assets/shadr/contents").toFile(),
+                        () -> lastAtlas),
                 line -> {
                     System.out.println("[shadr] " + line);
                     return kotlin.Unit.INSTANCE;
@@ -408,6 +413,11 @@ public final class Server {
                         SHADERS.load(),
                         ENVIRONMENT.all())
                         .build(PACK_DIR.toFile(), true);
+                lastAtlas = new dev.shadr.pack.UiImageAtlas(
+                        REPO_ROOT.resolve("assets/shadr/contents").toFile(),
+                        PACK_DIR.toFile(),
+                        Path.of("out", "uiimages_codepoints.properties").toFile())
+                        .rebuild();
                 publishPack(zipDirContents(PACK_DIR));
             } catch (Exception failure) {
                 System.out.println("[shadr] pack rebuild failed: " + failure);
