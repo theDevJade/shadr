@@ -83,6 +83,31 @@ class BundledAssetsTest {
     }
 
     @Test
+    fun `a bundled editor UI is complete enough to serve`() {
+        val entries = index() ?: return
+        val ui = entries.filter { it.startsWith("editor-web/") }
+        if (ui.isEmpty()) return
+
+        assertTrue(
+            "editor-web/index.html" in ui,
+            "the jar seeds an editor UI with no index.html, so the editor still shows the placeholder",
+        )
+        assertTrue(
+            ui.any { it.endsWith(".js") },
+            "the seeded editor UI has no script; a `flutter build web` output was probably truncated",
+        )
+    }
+
+    @Test
+    fun `generated groups the jar can ship all have a target`() {
+        val unmapped = BundledAssets.GENERATED - BundledAssets.TARGETS.keys
+        assertTrue(
+            unmapped.isEmpty(),
+            "these are marked generated but have nowhere to be written: $unmapped",
+        )
+    }
+
+    @Test
     fun `every target directory is one the plugin loads from`() {
         val source = File("src/main/kotlin/dev/shadr/paper/ShadrPlugin.kt").readText()
         for (target in BundledAssets.TARGETS.values) {

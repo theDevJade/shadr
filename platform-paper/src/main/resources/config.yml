@@ -1,9 +1,3 @@
-# shadr: screen-space UI from display entities and font glyphs.
-#
-# Pages live in pages/, reusable partials in components/, hover/click effects in
-# effects/, and user images in contents/images/. Everything is reloadable with
-# /shadr reload.
-
 resource-pack:
   # Send the generated pack when a player joins. Without the pack the client has no
   # shadr font and no HUD shaders, so pages render as missing glyphs in world space.
@@ -100,9 +94,6 @@ editor:
     # own address. Set this when players reach the box by a name that is not what
     # `bind` says: behind a proxy, through a tunnel, or on a NATed host.
     public-host: ''
-    # The built editor UI (a `flutter build web` output directory). Relative paths
-    # resolve against this data folder. If it is missing, the port still answers,
-    # with instructions, not a 404.
     ui-dir: 'editor-web'
     # Serve the editor over HTTPS from a PKCS12 or JKS keystore. Relative paths
     # resolve against this data folder. Blank is plain HTTP, which is what loopback

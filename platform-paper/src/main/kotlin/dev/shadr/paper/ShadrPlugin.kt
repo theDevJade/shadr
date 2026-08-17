@@ -573,7 +573,7 @@ class ShadrPlugin : JavaPlugin() {
     }
 
     private fun saveDefaultDirectories() {
-        listOf("pages", "components", "effects", "contents/images", "shaders", "font", "sounds")
+        listOf("pages", "components", "effects", "contents/images", "shaders", "font", "sounds", "editor-web")
             .forEach { File(dataFolder, it).mkdirs() }
         if (!File(dataFolder, "config.yml").exists()) saveResource("config.yml", false)
         unpackBundledAssets()
@@ -586,12 +586,17 @@ class ShadrPlugin : JavaPlugin() {
             return
         }
 
+        val entries = index.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
+        val shipped = entries.mapTo(mutableSetOf()) { it.substringBefore('/') }
+        val stale = BundledAssets.GENERATED.filterTo(mutableSetOf()) { it in shipped && !isStamped(it) }
+
         var written = 0
-        for (entry in index.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }) {
-            val targetDir = BundledAssets.TARGETS[entry.substringBefore('/')] ?: continue
+        for (entry in entries) {
+            val group = entry.substringBefore('/')
+            val targetDir = BundledAssets.TARGETS[group] ?: continue
             val relative = entry.substringAfter('/')
             val target = File(File(dataFolder, targetDir), relative)
-            if (target.exists()) continue
+            if (target.exists() && group !in stale) continue
             val stream = getResource("bundled/$entry") ?: run {
                 logger.warning("shadr: bundled/$entry is in the index but not in the jar")
                 null
@@ -600,7 +605,25 @@ class ShadrPlugin : JavaPlugin() {
             stream.use { input -> target.outputStream().use { input.copyTo(it) } }
             written++
         }
+        stale.forEach { stamp(it) }
         if (written > 0) logger.info("shadr: seeded $written bundled file(s) into ${dataFolder.name}/")
+    }
+
+    private fun stampFile(group: String): File? =
+        BundledAssets.TARGETS[group]?.let { File(File(dataFolder, it), BundledAssets.STAMP) }
+
+    private fun isStamped(group: String): Boolean {
+        val file = stampFile(group) ?: return true
+        val seeded = runCatching { file.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
+        return seeded == description.version
+    }
+
+    private fun stamp(group: String) {
+        val file = stampFile(group) ?: return
+        runCatching {
+            file.parentFile.mkdirs()
+            file.writeText(description.version + "\n")
+        }.onFailure { logger.warning("shadr: could not stamp ${file.parentFile.name} (${it.message})") }
     }
 
     private companion object {

@@ -9,6 +9,8 @@ package dev.shadr.paper
 object BundledAssets {
     const val INDEX = "bundled/index.txt"
 
+    const val STAMP = ".shadr-version"
+
     val TARGETS = mapOf(
         "font" to "font",
         "sounds" to "sounds",
@@ -16,5 +18,8 @@ object BundledAssets {
         "components" to "components",
         "effects" to "effects",
         "shaders" to "shaders",
+        "editor-web" to "editor-web",
     )
+
+    val GENERATED = setOf("editor-web")
 }

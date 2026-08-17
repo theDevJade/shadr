@@ -111,7 +111,7 @@ class PluginJarTest {
                 BundledAssets.INDEX in entries,
             "the seeding index is not in the jar, so a dropped-in plugin seeds nothing",
         )
-        for (group in BundledAssets.TARGETS.keys) {
+        for (group in BundledAssets.TARGETS.keys - BundledAssets.GENERATED) {
             assertTrue(
                 entries.any { it.startsWith("bundled/$group/") },
                 "nothing bundled under '$group', so first-run seeding writes none of it",

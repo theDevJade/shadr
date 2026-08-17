@@ -32,6 +32,17 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Sync fonts
+        run: ./scripts/sync-editor-fonts.sh
+
+      - name: Build the editor UI the jar embeds
+        run: flutter build web --release
+        working-directory: editor
+
       - name: Build
         run: ./gradlew ${{ env.GRADLE_TASK }} --no-daemon
 

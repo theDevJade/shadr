@@ -32,14 +32,19 @@ tasks.test {
     dependsOn(tasks.processResources, tasks.jar)
 }
 
-val bundled = mapOf(
-    "font" to rootProject.file("assets/font"),
-    "sounds" to rootProject.file("assets/shadr/sounds"),
-    "pages" to rootProject.file("protocol/pages"),
-    "components" to rootProject.file("protocol/components"),
-    "effects" to rootProject.file("protocol/effects"),
-    "shaders" to rootProject.file("shaders"),
-)
+val editorWeb: File = providers.gradleProperty("shadrEditorWeb")
+    .map { rootProject.file(it) }
+    .getOrElse(rootProject.file("editor/build/web"))
+
+val bundled = buildMap {
+    put("font", rootProject.file("assets/font"))
+    put("sounds", rootProject.file("assets/shadr/sounds"))
+    put("pages", rootProject.file("protocol/pages"))
+    put("components", rootProject.file("protocol/components"))
+    put("effects", rootProject.file("protocol/effects"))
+    put("shaders", rootProject.file("shaders"))
+    if (editorWeb.isDirectory) put("editor-web", editorWeb)
+}
 
 val bundledIndex by tasks.registering {
     val output = layout.buildDirectory.file("generated/bundled-index/index.txt")

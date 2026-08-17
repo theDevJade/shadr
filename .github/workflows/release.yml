@@ -17,8 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - uses: actions/setup-java@v4
         with:
@@ -35,6 +33,17 @@ jobs:
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           if [[ "$TAG" == *-* ]]; then echo "prerelease=true" >> "$GITHUB_OUTPUT";
           else echo "prerelease=false" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Sync fonts
+        run: ./scripts/sync-editor-fonts.sh
+
+      - name: Build the editor UI the jar embeds
+        run: flutter build web --release
+        working-directory: editor
 
       - name: Build
         run: >
@@ -72,6 +81,7 @@ jobs:
         run: >
           gh release create "${{ steps.version.outputs.tag }}"
           dist/*
+          --target ${{ github.sha }}
           --title "shadr ${{ steps.version.outputs.version }}"
           --generate-notes
           ${{ steps.version.outputs.prerelease == 'true' && '--prerelease' || '' }}
