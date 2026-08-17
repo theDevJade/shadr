@@ -17,7 +17,7 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Build and test
         run: ./gradlew build --no-daemon
@@ -45,7 +45,7 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Build the jars the integrations compile against
         run: ./gradlew :core:jar :platform-paper:jar --no-daemon
@@ -68,7 +68,7 @@ jobs:
           distribution: temurin
           java-version: '25'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6
 
       - name: Build core
         run: ./gradlew :core:jar --no-daemon
