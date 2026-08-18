@@ -19,6 +19,7 @@ final class Types {
             case ITEM_DISPLAY -> EntityType.ITEM_DISPLAY;
             case BLOCK_DISPLAY -> EntityType.BLOCK_DISPLAY;
             case INTERACTION -> EntityType.INTERACTION;
+            case ITEM_FRAME -> EntityType.ITEM_FRAME;
             case ENDERMAN -> EntityType.ENDERMAN;
             case CREEPER -> EntityType.CREEPER;
         };

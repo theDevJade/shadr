@@ -347,6 +347,19 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                         : 'item', v),
               ),
             ),
+            if (element.type == 'VIDEO')
+              PropertyRow(
+                label: 'Delivery',
+                child: ChoiceField<bool>(
+                  value: element.stream,
+                  enabled: editable,
+                  options: const [
+                    (value: false, icon: Icons.inventory_2_outlined, label: 'Baked'),
+                    (value: true, icon: Icons.podcasts, label: 'Streamed'),
+                  ],
+                  onChanged: (v) => set('stream', '$v'),
+                ),
+              ),
             if (element.type == 'VIDEO') _MissingClipHint(model: model, name: element.item),
           ],
         ),

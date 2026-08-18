@@ -14,7 +14,11 @@ public interface PacketBackend {
 
     int nextEntityId(Player viewer);
 
-    void spawn(Player viewer, int entityId, FakeEntityKind kind, Location at);
+    default void spawn(Player viewer, int entityId, FakeEntityKind kind, Location at) {
+        spawn(viewer, entityId, kind, at, 0);
+    }
+
+    void spawn(Player viewer, int entityId, FakeEntityKind kind, Location at, int data);
 
     void metadata(Player viewer, int entityId, List<MetaValue> values);
 
@@ -27,6 +31,8 @@ public interface PacketBackend {
     void resetCamera(Player viewer);
 
     void teleport(Player viewer, int entityId, Location to);
+
+    void mapData(Player viewer, int mapId, int startX, int startY, int width, int height, byte[] colors);
 
     void remove(Player viewer, int... entityIds);
 

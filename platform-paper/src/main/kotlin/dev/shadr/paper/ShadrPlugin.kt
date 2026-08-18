@@ -229,6 +229,7 @@ class ShadrPlugin : JavaPlugin() {
             },
             environment = environment.all(),
             videos = videoSources(),
+            stream = config.stream.takeIf { it.enabled }?.geometry(),
         ).build(packRoot)
 
         val atlas = UiImageAtlas(
@@ -339,8 +340,27 @@ class ShadrPlugin : JavaPlugin() {
             val player = runCatching { Bukkit.getPlayer(java.util.UUID.fromString(uuid)) }.getOrNull() ?: continue
             bridge.hudSink.ensureMounted(player)
         }
+        tickStreams()
         refreshPlaceholders()
     }
+
+    private fun tickStreams() {
+        val sink = bridge.streamSink ?: return
+        if (!config.stream.enabled) return
+        val geometry = config.stream.geometry()
+        val period = maxOf(1, (20.0 / geometry.fps).toInt())
+        streamTicks += 1
+        for (player in server.onlinePlayers) {
+            if (!sink.isActive(player)) continue
+            sink.tick(player)
+            if (streamTicks % period != 0) continue
+            val channel = sink.channel(player) ?: continue
+            geometry.apply(channel, stream = 0, serial = sink.nextSerial(player))
+            sink.push(player)
+        }
+    }
+
+    private var streamTicks = 0
 
     private fun refreshPlaceholders() {
         val interval = config.editor.placeholderRefreshTicks
@@ -430,6 +450,8 @@ class ShadrPlugin : JavaPlugin() {
 
     fun closePage(player: PlayerId) {
         sessions.remove(player.uuid) ?: return
+        runCatching { Bukkit.getPlayer(java.util.UUID.fromString(player.uuid)) }.getOrNull()
+            ?.let { bridge.streamSink?.stop(it) }
         bridge.hud().clear(player)
         bridge.camera().setClickTargetsEnabled(player, false)
         bridge.camera().stop(player)
@@ -461,6 +483,7 @@ class ShadrPlugin : JavaPlugin() {
             "pages" -> say(sender, "pages", "pages" to pages.keys.sorted().joinToString(", "))
             "editor" -> return editorCommand(sender, args.getOrNull(1)?.lowercase())
             "shader" -> return shaderCommand(sender, args.drop(1))
+            "stream" -> return streamCommand(sender, args.drop(1))
             "update" -> {
                 val service = updates
                     ?: return say(sender, "update-disabled")
@@ -469,6 +492,52 @@ class ShadrPlugin : JavaPlugin() {
             else -> say(sender, "usage")
         }
         return true
+    }
+
+    private fun streamCommand(sender: CommandSender, args: List<String>): Boolean {
+        val player = sender as? Player ?: return say(sender, "players-only")
+        val sink = bridge.streamSink
+            ?: return reply(sender, "the map stream needs packet entities; set rendering.packet-entities: true")
+        if (!config.stream.enabled) {
+            return reply(sender, "the map stream is off; set stream.enabled: true in config.yml and /shadr reload")
+        }
+
+        val geometry = config.stream.geometry()
+        when (args.firstOrNull()?.lowercase()) {
+            "stop" -> {
+                sink.stop(player)
+                return reply(sender, "stream stopped")
+            }
+            "status" -> {
+                return reply(
+                    sender,
+                    if (!sink.isActive(player)) {
+                        "stream inactive"
+                    } else {
+                        "stream active: ${geometry.slots} slot(s), " +
+                            "${geometry.regionWidth}x${geometry.regionHeight} ingest, " +
+                            "${sink.bytesSent(player)} byte(s) sent"
+                    },
+                )
+            }
+            null, "start", "test" -> {
+                if (!bridge.cameraControl.isActive(PlayerId(player.uniqueId.toString()))) {
+                    return reply(sender, "open a page first; the ingest passes ride the camera session's post chain")
+                }
+                sink.start(player, geometry.slots, geometry.mapIdBase)
+                val channel = sink.channel(player)
+                    ?: return reply(sender, "stream failed to start")
+                for (slot in 0 until geometry.slots) channel.ramp(slot)
+                geometry.apply(channel, stream = 0, serial = sink.nextSerial(player))
+                sink.push(player)
+                return reply(
+                    sender,
+                    "stream started: ${geometry.slots} slot(s), ${sink.bytesSent(player)} byte(s) sent" +
+                        if (geometry.probe) "; solid green means every word survived" else "",
+                )
+            }
+        }
+        return reply(sender, "usage: /shadr stream <start|stop|status>")
     }
 
     private fun shaderCommand(sender: CommandSender, args: List<String>): Boolean {

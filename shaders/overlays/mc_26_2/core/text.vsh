@@ -16,6 +16,9 @@ in ivec2 UV2;
 #moj_import <minecraft:projection.glsl>
 #moj_import <minecraft:globals.glsl>
 #moj_import <hud.glsl>
+#moj_import <shadr_stream_vertex.glsl>
+
+uniform sampler2D Sampler0;
 
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
 uniform sampler2D Sampler2;
@@ -28,6 +31,16 @@ out vec2 texCoord0;
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
+    texCoord0 = UV0;
+
+#if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
+    if (shadr_stream_place(Sampler0, UV0)) {
+        vertexColor = vec4(1.0);
+        sphericalVertexDistance = 0.0;
+        cylindricalVertexDistance = 0.0;
+        return;
+    }
+#endif
 
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
     sphericalVertexDistance = fog_spherical_distance(Position);
@@ -36,7 +49,6 @@ void main() {
 #else
     vertexColor = Color;
 #endif
-    texCoord0 = UV0;
 
     if (make_hud()) {
         vertexColor = Color;

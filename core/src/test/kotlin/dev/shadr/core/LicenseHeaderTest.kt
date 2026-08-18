@@ -18,7 +18,7 @@ class LicenseHeaderTest {
     @Test
     fun `only shadr's own sources carry the banner`() {
         val stamped = repo.walkTopDown()
-            .onEnter { it.name !in setOf("build", ".git", ".gradle", "out", "node_modules") }
+            .onEnter { it.name !in setOf("build", "bin", ".git", ".gradle", "out", "node_modules") }
             .filter { it.isFile && it.extension in setOf("kt", "java", "glsl", "fsh", "vsh") }
             .filter { it.readText().contains(notice) }
             .toList()

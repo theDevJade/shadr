@@ -34,12 +34,14 @@ class VideoImport(
         val maxHeight: Int = VideoBudget.MAX_HEIGHT,
         val quality: Int = MosaicEncoder.Options().quality,
         val gopFrames: Int = MosaicEncoder.Options().gopFrames,
+        val streamed: Boolean = false,
     )
 
     data class Result(val clip: VideoAssets.Source?, val issues: List<String>)
 
     fun import(request: Request): Result {
         VideoClip.validateId(request.id)?.let { return Result(null, listOf("${request.id}: $it")) }
+        if (request.streamed) return importStreamed(request)
         if (!request.source.exists()) {
             return Result(null, listOf("${request.id}: no such source ${request.source.path}"))
         }
@@ -220,6 +222,36 @@ class VideoImport(
     private fun tooLarge(request: Request, frames: Int): String =
         "${request.id}: $frames frames will not fit one sheet at any resolution. " +
             "Lower fps or maxSeconds, or raise quality (a larger number encodes smaller)."
+
+    private fun importStreamed(request: Request): Result {
+        val issues = mutableListOf<String>()
+        if (!request.source.isFile) {
+            return Result(null, listOf("${request.id}: streamed video needs a file source"))
+        }
+        val probe = probe(request.source)
+            ?: return Result(null, listOf("${request.id}: ffprobe could not read the source"))
+        val audio = extractAudio(request, probe.seconds.coerceAtLeast(1.0), issues)
+        if (audio != null) {
+            issues += "${request.id}: streamed, audio track ${audio.size / 1024} KiB"
+        } else {
+            issues += "${request.id}: streamed, no audio"
+        }
+        return Result(
+            VideoAssets.Source(
+                clip = VideoClip(
+                    id = request.id,
+                    width = probe.width,
+                    height = probe.height,
+                    frameCount = (probe.seconds * request.fps).toInt().coerceAtLeast(1),
+                    fps = request.fps,
+                ),
+                mosaic = null,
+                audio = audio,
+                streamed = true,
+            ),
+            issues,
+        )
+    }
 
     private fun extractAudio(request: Request, seconds: Double, issues: MutableList<String>): ByteArray? {
         if (probe(request.source)?.let { true } != true) return null
@@ -449,6 +481,7 @@ class VideoLibrary @JvmOverloads constructor(
     private val maxSeconds: Double = VideoImport.WHOLE_SOURCE,
     private val quality: Int = MosaicEncoder.Options().quality,
     private val maxHeight: Int = VideoBudget.MAX_HEIGHT,
+    private val streamedIds: Set<String> = emptySet(),
 ) {
     data class Result(val sources: List<VideoAssets.Source>, val issues: List<String>)
 
@@ -465,14 +498,16 @@ class VideoLibrary @JvmOverloads constructor(
             .orEmpty()
 
         for (entry in entries) {
+            val id = entry.nameWithoutExtension.lowercase()
             val result = importer.import(
                 VideoImport.Request(
-                    id = entry.nameWithoutExtension.lowercase(),
+                    id = id,
                     source = entry,
                     fps = fps,
                     maxSeconds = maxSeconds,
                     maxHeight = maxHeight,
                     quality = quality,
+                    streamed = id in streamedIds,
                 ),
             )
             issues += result.issues

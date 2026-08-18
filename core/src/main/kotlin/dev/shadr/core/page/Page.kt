@@ -115,6 +115,7 @@ data class Element(
     val mirrorX: Boolean = false,
     val mirrorY: Boolean = false,
     val item: String? = null,
+    val stream: Boolean = false,
     val itemCustomModelData: Int? = null,
     val playerHeadText: Boolean = false,
     val interaction: Interaction = Interaction(),

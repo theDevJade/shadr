@@ -254,6 +254,7 @@ class EditorSession(
             "color" -> Rgb.parse(raw)?.let { element.copy(color = it) } ?: element
             "text" -> element.copy(text = raw)
             "item", "shader", "video" -> element.copy(item = raw.trim().ifBlank { null })
+            "stream" -> element.copy(stream = raw.toBooleanStrictOrNull() ?: element.stream)
             "unicode" -> element.copy(unicode = raw)
             "font" -> element.copy(font = raw)
             "id" -> if (raw.isBlank() || page.elements.any { it.id == raw }) element else element.copy(id = raw)

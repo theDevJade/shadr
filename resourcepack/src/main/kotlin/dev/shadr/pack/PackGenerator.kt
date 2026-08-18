@@ -20,6 +20,7 @@ class PackGenerator(
     private val shaders: dev.shadr.core.shader.ShaderRegistry = dev.shadr.core.shader.ShaderRegistry.EMPTY,
     private val environment: Map<dev.shadr.core.shader.EnvironmentEffect, Boolean>,
     private val videos: List<VideoAssets.Source> = emptyList(),
+    private val stream: dev.shadr.core.stream.StreamGeometry? = null,
 ) {
     val overrides = mutableListOf<String>()
 
@@ -188,6 +189,19 @@ class PackGenerator(
                 reportItemFragmentGap(root, overlay)
             }
 
+            if (File(target, "include/shadr_stream.glsl").isFile) {
+                write(
+                    root,
+                    "${overlay.directory}/assets/minecraft/shaders/include/shadr_map.glsl",
+                    dev.shadr.core.stream.MapPalette.glsl() + "\n" +
+                        dev.shadr.core.stream.StreamFormat.glsl() + "\n" +
+                        dev.shadr.core.stream.StreamLayout.glsl() + "\n" +
+                        dev.shadr.core.stream.StreamImage.glsl() + "\n" +
+                        dev.shadr.core.stream.StreamBlocks.glsl() + "\n" +
+                        dev.shadr.core.stream.StreamCodec.glsl(dev.shadr.core.stream.StreamPresets.CODEC_1080),
+                )
+            }
+
             val kept = environment.filterValues { it }.keys.flatMap { it.programs }.toSet()
             for ((effect, on) in environment) {
                 if (on) {
@@ -203,13 +217,39 @@ class PackGenerator(
 
     private fun writeVideoChain(assets: File, overlay: PackOverlay) {
         if (environment[dev.shadr.core.shader.EnvironmentEffect.VIDEO] != true) return
-        if (videos.isEmpty()) return
+        val active = stream?.takeIf {
+            (it.probe || it.codec) && File(assets, "shaders/include/shadr_stream.glsl").isFile
+        }
+        if (videos.isEmpty() && active == null) return
 
         val chainFile = assetFor(assets, dev.shadr.core.shader.PostChains.HOST_PATH)
 
         val blurChain = chainFile.takeIf { frostedGlassOn && it.isFile }?.readText()
         fun abandon() {
             if (!frostedGlassOn) chainFile.delete()
+        }
+
+        if (active != null) {
+            val programs = if (active.codec) PostChainBuilder.CODEC_PROGRAMS else PostChainBuilder.STREAM_PROGRAMS
+            val absent = programs.filterNot { assetFor(assets, it).isFile }
+            if (absent.isNotEmpty()) {
+                gaps += Gap(
+                    overlay = overlay,
+                    feature = if (active.codec) "streamed video decode" else "streamed video probe",
+                    missing = absent,
+                    consequence = "the map stream cannot run on these clients",
+                )
+                abandon()
+                return
+            }
+        }
+
+        val baked = videos.filter { it.mosaic != null }
+        if (baked.isEmpty()) {
+            val composed = PostChainBuilder.compose(blurChain, null, active) ?: run { abandon(); return }
+            chainFile.parentFile.mkdirs()
+            chainFile.writeText(composed)
+            return
         }
 
         val missing = PostChainBuilder.PROGRAMS.filterNot { assetFor(assets, it).isFile }
@@ -224,12 +264,12 @@ class PackGenerator(
             return
         }
 
-        val source = videos.first()
-        if (videos.size > 1) {
+        val source = baked.first()
+        if (baked.size > 1) {
             gaps += Gap(
                 overlay = overlay,
-                feature = "video panels beyond the first (" +
-                    videos.drop(1).joinToString { it.clip.id } + ")",
+                feature = "baked video panels beyond the first (" +
+                    baked.drop(1).joinToString { it.clip.id } + ")",
                 missing = listOf("a clip id in the on-screen marker"),
                 consequence = "only '${source.clip.id}' plays",
             )
@@ -245,11 +285,12 @@ class PackGenerator(
                 startSeconds = 0.0,
                 data = source.clip.sheetTexture,
                 dataWidth = dev.shadr.core.video.MosaicFormat.SHEET_EDGE,
-                dataHeight = VideoAssets.dataRows(source.mosaic),
+                dataHeight = VideoAssets.dataRows(source.mosaic!!),
                 superColumns = source.mosaic.superColumns,
                 superblocksPerFrame = source.mosaic.superblocksPerFrame,
                 codebookBase = source.mosaic.codebookBase,
             ),
+            stream = active,
         ) ?: return
 
         chainFile.parentFile.mkdirs()

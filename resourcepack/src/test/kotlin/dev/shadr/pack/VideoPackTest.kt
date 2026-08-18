@@ -144,7 +144,7 @@ class VideoPackTest {
 
         val image = javax.imageio.ImageIO.read(data)
         assertEquals(dev.shadr.core.video.MosaicFormat.SHEET_EDGE, image.width)
-        assertEquals(VideoAssets.dataRows(source.mosaic), image.height)
+        assertEquals(VideoAssets.dataRows(source.mosaic!!), image.height)
 
         val declared = Regex(""""width":\s*(\d+),\s*"height":\s*(\d+),\s*"bilinear"""")
             .find(chain(out).readText())
@@ -161,9 +161,9 @@ class VideoPackTest {
             File(out, "assets/minecraft/textures/effect/shadr/video/${source.clip.id}.png"),
         )
         val edge = dev.shadr.core.video.MosaicFormat.SHEET_EDGE
-        for (i in 0 until source.mosaic.texelCount) {
+        for (i in 0 until source.mosaic!!.texelCount) {
             assertEquals(
-                source.mosaic.data[i], image.getRGB(i % edge, i / edge),
+                source.mosaic!!.data[i], image.getRGB(i % edge, i / edge),
                 "texel $i changed on the way into the pack",
             )
         }

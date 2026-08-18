@@ -1,39 +1,29 @@
 resource-pack:
-  # Send the generated pack when a player joins. Without the pack the client has no
-  # shadr font and no HUD shaders, so pages render as missing glyphs in world space.
+  # Send the generated pack when a player joins.
   apply-on-join: true
   kick-on-decline: false
   kick-on-fail: false
   compress-images: true
 
-  # Blank the vanilla HUD sprites (hearts, hotbar, food, armor, xp, locator bar).
-  # There is no packet to hide the HUD, so the sprites are replaced with a
-  # transparent pixel, so vanilla still draws it, into nothing.
+  # Blank the vanilla HUD sprites
   remove-default-hotbar: false
 
   hosting:
     # shadr hosts the pack itself on the server's own address.
     default-pack:
       enabled: true
-    # Same, but with an explicitly advertised address; use behind a proxy or NAT.
+    # Same, but with an explicit address
     self-host:
       enabled: false
       server-ip: '127.0.0.1'
       pack-port: 8123
-    # The pack is already published somewhere; shadr only sends URL + hash.
+    # The pack is already published somewhere
     external-host:
       enabled: false
       url: ''
-    # Build the pack but never send one. Another plugin owns what the player
-    # downloads; shadr contributes its files and stays out of the way. Read the
-    # generated tree through ShadrApi, or have it copied for you with merge-into.
     merge-only:
       enabled: false
-      # Copy the generated files over this pack after every build. Relative paths
-      # resolve against the shadr data folder. Files shadr did not generate are left
-      # alone, so the other pack keeps its own content.
       merge-into: ''
-    # You merge shadr's generated assets into your own pack; shadr sends nothing.
     external-pack:
       enabled: false
 
@@ -101,3 +91,17 @@ updates:
 
 experimental:
   mouse-prediction: true
+
+# Server-streamed video using the map.
+stream:
+  enabled: false
+
+  # quality: ~16 slots, ~224 KiB working set, roughly 1 MB/s per viewer
+  # broadcast: 4 slots at a lower rate
+  profile: quality
+  slots: 0
+  region-x: 0
+  region-y: 0
+  map-id-base: 32000
+  fps: 0
+  probe: false

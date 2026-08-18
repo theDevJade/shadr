@@ -26,7 +26,7 @@ class Lang(private val overrides: Map<String, String> = emptyMap()) {
             "console-has-nowhere-to-put-it" to "players only; the console has nowhere to put it",
             "no-permission" to "you do not have {permission}",
             "reloaded" to "reloaded {pages} page(s)",
-            "usage" to "usage: /shadr <open|close|reload|pack|pages|shader|editor|update>",
+            "usage" to "usage: /shadr <open|close|reload|pack|pages|shader|stream|editor|update>",
             "pages" to "pages: {pages}",
             "no-such-page" to "no such page: {page}",
             "pack-not-sent" to "this server does not send a pack (hosting is {mode})",

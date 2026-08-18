@@ -243,6 +243,7 @@ class TemplateResolver(
             item = node.string("shader").takeIf { type == ElementType.SHADER }
                 ?: node.string("video").takeIf { type == ElementType.VIDEO }
                 ?: node.string("item", "itemDisplay", "itemDisplayBlock"),
+            stream = node.bool("stream", "streamed") && type == ElementType.VIDEO,
             itemCustomModelData = node.string("customModelData", "item.customModelData")?.toIntOrNull(),
             playerHeadText = node.bool("playerHeadText"),
             interaction = readInteraction(node),

@@ -34,12 +34,37 @@ object PostChainBuilder {
     const val STATE = "minecraft:post/shadr_video_state"
     const val FULLSCREEN = "minecraft:post/shadr_fullscreen"
 
+    const val TARGET_STREAM_OUT = "shadr:stream_out"
+    const val PROBE = "minecraft:post/shadr_stream_probe"
+
+    const val TARGET_SCODEC_PREV = "shadr:scodec_prev"
+    const val TARGET_SCODEC_CUR = "shadr:scodec_cur"
+    const val TARGET_SCODEC_STATE_PREV = "shadr:scodec_state_prev"
+    const val TARGET_SCODEC_STATE = "shadr:scodec_state"
+    const val TARGET_SCODEC_OUT = "shadr:scodec_out"
+    const val SCODEC_STATE = "minecraft:post/shadr_scodec_state"
+    const val SCODEC_DECODE = "minecraft:post/shadr_scodec_decode"
+
     val PROGRAMS = listOf(
         "post/shadr_fullscreen.vsh",
         "post/shadr_video_state.fsh",
         "post/shadr_video_decode.fsh",
         "post/shadr_video_writeback.fsh",
         "post/shadr_video_composite.fsh",
+    )
+
+    val STREAM_PROGRAMS = listOf(
+        "post/shadr_fullscreen.vsh",
+        "post/shadr_video_writeback.fsh",
+        "post/shadr_stream_probe.fsh",
+    )
+
+    val CODEC_PROGRAMS = listOf(
+        "post/shadr_fullscreen.vsh",
+        "post/shadr_video_writeback.fsh",
+        "post/shadr_video_composite.fsh",
+        "post/shadr_scodec_state.fsh",
+        "post/shadr_scodec_decode.fsh",
     )
 
     data class Video(
@@ -58,27 +83,56 @@ object PostChainBuilder {
 
     private val json = Json { prettyPrint = true; prettyPrintIndent = "  " }
 
-    fun compose(blurChain: String?, video: Video?): String? {
-        if (video == null) return blurChain
+    fun compose(blurChain: String?, video: Video?, stream: dev.shadr.core.stream.StreamGeometry? = null): String? {
+        val codec = stream?.takeIf { it.codec }
+        val probe = stream?.takeIf { it.probe && !it.codec }
+        if (video == null && probe == null && codec == null) return blurChain
         val base = blurChain?.let { Json.parseToJsonElement(it).jsonObject }
 
         val targets = buildJsonObject {
             base?.get("targets")?.jsonObject?.forEach { (name, value) -> put(name, value) }
-            put(TARGET_PREV, target(video.width, video.height, persistent = true))
-            put(TARGET_CUR, target(video.width, video.height, persistent = false))
-            put(TARGET_STATE_PREV, target(STATE_WIDTH, 1, persistent = true))
-            put(TARGET_STATE, target(STATE_WIDTH, 1, persistent = false))
-            put(TARGET_OUT, JsonObject(emptyMap()))
+            if (video != null) {
+                put(TARGET_PREV, target(video.width, video.height, persistent = true))
+                put(TARGET_CUR, target(video.width, video.height, persistent = false))
+                put(TARGET_STATE_PREV, target(STATE_WIDTH, 1, persistent = true))
+                put(TARGET_STATE, target(STATE_WIDTH, 1, persistent = false))
+                put(TARGET_OUT, JsonObject(emptyMap()))
+            }
+            if (probe != null) put(TARGET_STREAM_OUT, JsonObject(emptyMap()))
+            if (codec != null) {
+                val frame = dev.shadr.core.stream.StreamPresets.CODEC_1080
+                put(TARGET_SCODEC_PREV, target(frame.frameWidth, frame.frameHeight, persistent = true))
+                put(TARGET_SCODEC_CUR, target(frame.frameWidth, frame.frameHeight, persistent = false))
+                put(TARGET_SCODEC_STATE_PREV, target(STATE_WIDTH, 1, persistent = true))
+                put(TARGET_SCODEC_STATE, target(STATE_WIDTH, 1, persistent = false))
+                put(TARGET_SCODEC_OUT, JsonObject(emptyMap()))
+            }
         }
 
         val passes = buildJsonArray {
-            add(statePass(video))
-            add(decodePass(video))
-            add(blit(TARGET_CUR, TARGET_PREV))
-            add(blit(TARGET_STATE, TARGET_STATE_PREV))
+            if (video != null) {
+                add(statePass(video))
+                add(decodePass(video))
+                add(blit(TARGET_CUR, TARGET_PREV))
+                add(blit(TARGET_STATE, TARGET_STATE_PREV))
+            }
             base?.get("passes")?.jsonArray?.forEach { add(it) }
-            add(compositePass())
-            add(blit(TARGET_OUT, "minecraft:main"))
+            if (video != null) {
+                add(compositePass())
+                add(blit(TARGET_OUT, "minecraft:main"))
+            }
+            if (probe != null) {
+                add(probePass(probe))
+                add(blit(TARGET_STREAM_OUT, "minecraft:main"))
+            }
+            if (codec != null) {
+                add(scodecStatePass(codec))
+                add(scodecDecodePass(codec))
+                add(blit(TARGET_SCODEC_CUR, TARGET_SCODEC_PREV))
+                add(blit(TARGET_SCODEC_STATE, TARGET_SCODEC_STATE_PREV))
+                add(scodecCompositePass())
+                add(blit(TARGET_SCODEC_OUT, "minecraft:main"))
+            }
         }
 
         return json.encodeToString(
@@ -149,6 +203,83 @@ object PostChainBuilder {
             },
         )
         put("output", TARGET_OUT)
+    }
+
+    private fun probePass(stream: dev.shadr.core.stream.StreamGeometry) = buildJsonObject {
+        put("vertex_shader", FULLSCREEN)
+        put("fragment_shader", PROBE)
+        put("inputs", buildJsonArray { add(targetInput("In", "minecraft:main")) })
+        put("output", TARGET_STREAM_OUT)
+        put(
+            "uniforms",
+            buildJsonObject {
+                put(
+                    "ShadrStreamConfig",
+                    buildJsonArray {
+                        add(vec4(stream.regionX, stream.regionY, stream.columns, stream.rows))
+                        add(vec4(stream.slots, stream.probeMode, 0, 0))
+                    },
+                )
+            },
+        )
+    }
+
+    private fun streamUniforms(stream: dev.shadr.core.stream.StreamGeometry) = buildJsonObject {
+        put(
+            "ShadrStreamConfig",
+            buildJsonArray {
+                add(vec4(stream.regionX, stream.regionY, stream.columns, stream.rows))
+                add(vec4(stream.slots, stream.probeMode, 0, 0))
+            },
+        )
+    }
+
+    private fun scodecStatePass(stream: dev.shadr.core.stream.StreamGeometry) = buildJsonObject {
+        put("vertex_shader", FULLSCREEN)
+        put("fragment_shader", SCODEC_STATE)
+        put(
+            "inputs",
+            buildJsonArray {
+                add(targetInput("In", "minecraft:main"))
+                add(targetInput("LastState", TARGET_SCODEC_STATE_PREV))
+            },
+        )
+        put("output", TARGET_SCODEC_STATE)
+        put("uniforms", streamUniforms(stream))
+    }
+
+    private fun scodecDecodePass(stream: dev.shadr.core.stream.StreamGeometry) = buildJsonObject {
+        put("vertex_shader", FULLSCREEN)
+        put("fragment_shader", SCODEC_DECODE)
+        put(
+            "inputs",
+            buildJsonArray {
+                add(targetInput("In", "minecraft:main"))
+                add(targetInput("Prev", TARGET_SCODEC_PREV))
+                add(targetInput("State", TARGET_SCODEC_STATE))
+            },
+        )
+        put("output", TARGET_SCODEC_CUR)
+        put("uniforms", streamUniforms(stream))
+    }
+
+    private fun scodecCompositePass() = buildJsonObject {
+        put("vertex_shader", FULLSCREEN)
+        put("fragment_shader", COMPOSITE)
+        put(
+            "inputs",
+            buildJsonArray {
+                add(targetInput("In", "minecraft:main"))
+                add(
+                    buildJsonObject {
+                        put("sampler_name", "Frame")
+                        put("target", TARGET_SCODEC_CUR)
+                        put("bilinear", true)
+                    },
+                )
+            },
+        )
+        put("output", TARGET_SCODEC_OUT)
     }
 
     private fun blit(from: String, to: String) = buildJsonObject {

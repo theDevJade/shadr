@@ -51,7 +51,7 @@ class VideoImportTest {
         assertEquals(24, clip.frameCount)
         assertEquals(24.0, clip.fps)
         assertEquals(1.0, clip.duration)
-        assertTrue(result.clip!!.mosaic.texelCount > 0, "the clip encoded to nothing")
+        assertTrue(result.clip!!.mosaic!!.texelCount > 0, "the clip encoded to nothing")
     }
 
     @Test
@@ -76,15 +76,16 @@ class VideoImportTest {
             VideoImport.Request(id = "big", source = source, fps = 60.0, maxSeconds = 10.0),
         )
         val imported = assertNotNull(result.clip, "import failed: ${result.issues}")
+        val mosaic = assertNotNull(imported.mosaic, "a baked import must carry a mosaic")
 
-        assertEquals(imported.clip.width, imported.mosaic.width)
-        assertEquals(imported.clip.height, imported.mosaic.height)
+        assertEquals(imported.clip.width, mosaic.width)
+        assertEquals(imported.clip.height, mosaic.height)
         assertTrue(
-            VideoAssets.dataRows(imported.mosaic) <= dev.shadr.core.video.MosaicFormat.SHEET_EDGE,
+            VideoAssets.dataRows(mosaic) <= dev.shadr.core.video.MosaicFormat.SHEET_EDGE,
             "the bitstream does not fit the data texture",
         )
         assertTrue(
-            imported.mosaic.compression > 1.0,
+            mosaic.compression > 1.0,
             "encoding made the clip larger than raw frames",
         )
     }
@@ -136,7 +137,7 @@ class VideoImportTest {
         assertEquals(180, imported.clip.height)
 
         // Decode the bitstream back and check it is moving footage, not one frame repeated.
-        val decoded = dev.shadr.core.video.MosaicReferenceDecoder.decode(imported.mosaic)
+        val decoded = dev.shadr.core.video.MosaicReferenceDecoder.decode(assertNotNull(imported.mosaic))
         assertEquals(30, decoded.size)
         assertTrue(
             decoded.map { it.contentHashCode() }.distinct().size > 1,

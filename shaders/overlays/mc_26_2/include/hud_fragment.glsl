@@ -14,12 +14,20 @@ float shadr_mode() {
     return floor(shadrMode + 0.5);
 }
 
+bool shadr_has_mode(float bit) {
+    return mod(floor(shadr_mode() / bit), 2.0) >= 1.0;
+}
+
 bool shadr_is_field() {
-    return mod(shadr_mode(), 4.0) >= 2.0;
+    return shadr_has_mode(2.0);
 }
 
 bool shadr_is_blur_panel() {
-    return shadr_mode() >= 4.0;
+    return shadr_has_mode(4.0);
+}
+
+bool shadr_is_stream() {
+    return shadr_has_mode(8.0);
 }
 
 float shadr_median(vec3 field) {

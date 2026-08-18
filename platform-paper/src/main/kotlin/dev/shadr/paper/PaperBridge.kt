@@ -45,6 +45,8 @@ class PaperBridge(
     val cameraControl: ShadrCamera =
         if (backend != null) PacketCamera(backend, postEffects) else PaperCamera(plugin, postEffects)
 
+    val streamSink: PacketStreamSink? = backend?.let { PacketStreamSink(it) }
+
     private val inputSource = PaperInput(plugin, cameraControl)
     private val registry = PaperPlayerRegistry()
 

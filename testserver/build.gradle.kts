@@ -33,6 +33,7 @@ java {
 tasks.named<JavaExec>("run") {
     workingDir = rootDir.parentFile
     standardInput = System.`in`
+    systemProperties(providers.systemPropertiesPrefixedBy("shadr.").get())
 }
 
 spotless {

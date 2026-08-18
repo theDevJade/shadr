@@ -24,8 +24,9 @@ object VideoAssets {
 
     data class Source(
         val clip: VideoClip,
-        val mosaic: MosaicClip,
+        val mosaic: MosaicClip?,
         val audio: ByteArray? = null,
+        val streamed: Boolean = false,
     )
 
     fun writeAll(root: File, sources: List<Source>) {
@@ -33,7 +34,7 @@ object VideoAssets {
             writeMarkerTexture(root, source.clip)
             writeModel(root, source.clip)
             writeItemDefinition(root, source.clip)
-            writeData(root, source)
+            if (source.mosaic != null) writeData(root, source)
             writeAudio(root, source)
         }
     }
@@ -51,7 +52,7 @@ object VideoAssets {
         (mosaic.texelCount + MosaicFormat.SHEET_EDGE - 1) / MosaicFormat.SHEET_EDGE
 
     private fun writeData(root: File, source: Source) {
-        val mosaic = source.mosaic
+        val mosaic = source.mosaic ?: return
         val rows = dataRows(mosaic)
         val image = BufferedImage(MosaicFormat.SHEET_EDGE, rows, BufferedImage.TYPE_INT_ARGB)
 

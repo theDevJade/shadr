@@ -169,6 +169,7 @@ class Element {
     this.outline,
     this.componentName,
     this.item,
+    this.stream = false,
     this.sourcePath = '',
     this.interaction = const Interaction(),
   });
@@ -192,6 +193,8 @@ class Element {
   final String? componentName;
 
   final String? item;
+
+  final bool stream;
 
   final String sourcePath;
 
@@ -239,6 +242,7 @@ class Element {
         outline: Outline.fromJson(json['outline'] as Map<String, dynamic>?),
         componentName: json['componentName'] as String?,
         item: json['item'] as String?,
+        stream: (json['stream'] as bool?) ?? false,
         sourcePath: (json['sourcePath'] as String?) ?? '',
         interaction: Interaction.fromJson(json['interaction'] as Map<String, dynamic>?),
       );

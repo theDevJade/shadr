@@ -34,6 +34,18 @@ fun main(args: Array<String>) {
 
     val environment = dev.shadr.core.shader.EnvironmentSettings(File(shaderSrc, "environment.properties"))
 
+    val stream = if (args.contains("--stream") || args.contains("--stream-probe")) {
+        dev.shadr.core.stream.StreamGeometry.DEFAULT.copy(
+            slots = flag("stream-slots", dev.shadr.core.stream.StreamGeometry.DEFAULT.slots.toDouble()).toInt(),
+            regionX = flag("stream-region-x", 0.0).toInt(),
+            regionY = flag("stream-region-y", 0.0).toInt(),
+            probe = args.contains("--stream-probe"),
+            probeMode = flag("stream-probe-mode", 0.0).toInt(),
+        )
+    } else {
+        null
+    }
+
     val generator = PackGenerator(
         shaderSrc = shaderSrc,
         fontDir = fontDir,
@@ -42,11 +54,20 @@ fun main(args: Array<String>) {
         shaders = shaders,
         environment = environment.all(),
         videos = videos.sources,
+        stream = stream,
     )
     val root = generator.build(outDir)
     println("pack tree -> ${root.path}")
     println("shapes    -> " + if (args.contains("--shapes")) "enabled (overrides core/item)" else "off")
     println("shaders   -> ${shaders.shaders.size}" + if (shaders.isEmpty) "" else ": " + shaders.shaders.joinToString { it.id })
+    println(
+        "stream    -> " + (
+            stream?.let {
+                "${it.slots} slot(s), ${it.regionWidth}x${it.regionHeight} ingest at " +
+                    "design ${it.regionX},${it.regionY}" + if (it.probe) ", probe on" else ""
+            } ?: "off"
+            ),
+    )
     println("world     -> " + environment.all().filterValues { it }.keys.joinToString { it.id }.ifEmpty { "vanilla (no overrides)" })
     println(
         "videos    -> " + videos.sources.joinToString {

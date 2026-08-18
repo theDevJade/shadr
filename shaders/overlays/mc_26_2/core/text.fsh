@@ -20,6 +20,13 @@ in vec2 texCoord0;
 out vec4 fragColor;
 
 void main() {
+#if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
+    if (shadr_is_stream()) {
+        fragColor = vec4(texture(Sampler0, texCoord0).rgb, 1.0);
+        return;
+    }
+#endif
+
     vec2 uvDerivative = fwidth(texCoord0);
 
 #ifdef IS_GRAYSCALE

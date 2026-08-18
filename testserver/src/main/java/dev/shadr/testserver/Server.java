@@ -150,11 +150,22 @@ public final class Server {
         videoSources();
         System.out.printf("[shadr] video ready in %.1fs%n", (System.nanoTime() - bakedAt) / 1e9);
 
+        if (Boolean.parseBoolean(System.getProperty("shadr.pack.rebuild", "true"))) {
+            System.out.println("[shadr] rebuilding the pack so launch properties apply");
+            rebuildPack();
+        }
+
+        MinecraftServer.setCompressionThreshold(Integer.getInteger("shadr.compression", 256));
+
         server.start("0.0.0.0", MC_PORT);
         final java.util.concurrent.atomic.AtomicLong audioTick =
                 new java.util.concurrent.atomic.AtomicLong();
         MinecraftServer.getSchedulerManager()
                 .buildTask(() -> tickAudio(audioTick.getAndIncrement()))
+                .repeat(TaskSchedule.tick(1))
+                .schedule();
+        MinecraftServer.getSchedulerManager()
+                .buildTask(Server::tickStreams)
                 .repeat(TaskSchedule.tick(1))
                 .schedule();
 
@@ -222,19 +233,113 @@ public final class Server {
                     new CursorPredictor());
             sessions.put(id.getUuid(), session);
             bridge.hud().apply(id, session.draws());
+            startStreamIfNeeded(id);
             System.out.println("[shadr] UI open for " + player.getUsername());
         });
     }
 
     private static void closeUi(Player player) {
         final PlayerId id = new PlayerId(player.getUuid().toString());
+        bridge.streamSink().stop(id);
         sessions.remove(id.getUuid());
         stopAudio(id);
         bridge.forget(id);
     }
 
+    private static final dev.shadr.core.stream.StreamGeometry STREAM =
+            dev.shadr.core.stream.StreamPresets.INSTANCE.carrier();
+
+    private static void tickStreams() {
+        for (String uuid : sessions.keySet()) {
+            final PlayerId id = new PlayerId(uuid);
+            if (bridge.streamSink().isActive(id)) bridge.streamSink().tick(id, STREAM);
+        }
+    }
+
+    private static java.io.File streamedSourceFor(String clipId) {
+        final java.io.File dir = REPO_ROOT.resolve("contents/videos").toFile();
+        final java.io.File[] entries = dir.listFiles();
+        if (entries == null) return null;
+        for (java.io.File entry : entries) {
+            if (entry.isFile() && entry.getName().toLowerCase(java.util.Locale.ROOT)
+                    .startsWith(clipId + ".")) {
+                return entry;
+            }
+        }
+        return null;
+    }
+
+    private static void startStreamIfNeeded(PlayerId id) {
+        if (demoPage == null) return;
+        for (dev.shadr.core.page.Element element : demoPage.getElements()) {
+            if (element.getType() != dev.shadr.core.page.ElementType.VIDEO) continue;
+            if (!element.getStream() || !element.getEnabled()) continue;
+            final String clip = element.getItem();
+            if (clip == null) continue;
+            final java.io.File source = streamedSourceFor(clip);
+            if (source == null) {
+                System.out.println("[shadr] streamed clip '" + clip + "' has no source file");
+                continue;
+            }
+            final var sink = bridge.streamSink();
+            final String startFailure = sink.start(id, STREAM);
+            if (startFailure != null) {
+                System.out.println("[shadr] stream: " + startFailure);
+                return;
+            }
+            final String playFailure = sink.playVideo(id, source);
+            if (playFailure != null) System.out.println("[shadr] stream: " + playFailure);
+            return;
+        }
+    }
+
     private static void registerCommands() {
         final var manager = MinecraftServer.getCommandManager();
+
+        final var stream = new Command("stream");
+        stream.setDefaultExecutor((sender, ctx) -> {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(Component.text("players only."));
+                return;
+            }
+            final PlayerId id = new PlayerId(player.getUuid().toString());
+            final var sink = bridge.streamSink();
+            final String[] parts = ctx.getInput().trim().split("\\s+");
+            final String action = parts.length > 1 ? parts[1].toLowerCase(java.util.Locale.ROOT) : "status";
+
+            switch (action) {
+                case "stop" -> {
+                    sink.stop(id);
+                    player.sendMessage(Component.text("shadr: stream stopped."));
+                }
+                case "video" -> {
+                    if (parts.length < 3) {
+                        player.sendMessage(Component.text("shadr: usage /stream video <path under the repo root>"));
+                        return;
+                    }
+                    if (!sink.isActive(id)) {
+                        final String failure = sink.start(id, STREAM);
+                        if (failure != null) {
+                            player.sendMessage(Component.text("shadr: " + failure));
+                            return;
+                        }
+                    }
+                    final String failure = sink.playVideo(id, REPO_ROOT.resolve(parts[2]).toFile());
+                    player.sendMessage(Component.text(
+                            failure != null ? "shadr: " + failure : "shadr: playing " + parts[2] + "."));
+                }
+                default -> player.sendMessage(Component.text(
+                        sink.isActive(id)
+                                ? "shadr: stream active, " + STREAM.getSlots() + " slot(s), "
+                                        + sink.bytesSent(id) + " byte(s), "
+                                        + sink.framesShown(id) + " frame(s)"
+                                        + (sink.codecStatus(id) != null ? ", " + sink.codecStatus(id) : "")
+                                        + (sink.videoFailure(id) != null
+                                                ? ", ffmpeg: " + sink.videoFailure(id) : "")
+                                : "shadr: stream inactive"));
+            }
+        });
+        manager.register(stream);
 
         final var ui = new Command("ui");
         ui.setDefaultExecutor((sender, ctx) -> {
@@ -476,6 +581,19 @@ public final class Server {
 
     private static String videoCacheKey = null;
 
+    private static java.util.Set<String> streamedClipIds() {
+        final java.util.Set<String> ids = new java.util.HashSet<>();
+        if (demoPage != null) {
+            for (dev.shadr.core.page.Element element : demoPage.getElements()) {
+                if (element.getType() == dev.shadr.core.page.ElementType.VIDEO
+                        && element.getStream() && element.getItem() != null) {
+                    ids.add(element.getItem().toLowerCase(java.util.Locale.ROOT));
+                }
+            }
+        }
+        return ids;
+    }
+
     private static java.util.List<dev.shadr.pack.VideoAssets.Source> videoSources() {
         final java.io.File contents = REPO_ROOT.resolve("contents").toFile();
         final java.io.File dir = new java.io.File(contents, dev.shadr.pack.VideoLibrary.FOLDER);
@@ -490,6 +608,8 @@ public final class Server {
                         .append(file.lastModified()).append(';');
             }
         }
+        final java.util.Set<String> streamed = streamedClipIds();
+        key.append("|streamed=").append(new java.util.TreeSet<>(streamed));
         if (key.toString().equals(videoCacheKey)) {
             return VIDEO_CACHE;
         }
@@ -500,7 +620,9 @@ public final class Server {
                     return kotlin.Unit.INSTANCE;
                 });
         final dev.shadr.pack.VideoLibrary.Result result =
-                new dev.shadr.pack.VideoLibrary(contents, importer, 30.0, 3.0).load();
+                new dev.shadr.pack.VideoLibrary(
+                        contents, importer, 30.0, 3.0, 24,
+                        dev.shadr.core.video.VideoBudget.MAX_HEIGHT, streamed).load();
         for (String issue : result.getIssues()) {
             System.out.println("[shadr] video: " + issue);
         }
@@ -519,7 +641,8 @@ public final class Server {
                         false,
                         SHADERS.load(),
                         ENVIRONMENT.all(),
-                        videoSources())
+                        videoSources(),
+                        STREAM)
                         .build(PACK_DIR.toFile(), true);
                 lastAtlas = new dev.shadr.pack.UiImageAtlas(
                         REPO_ROOT.resolve("assets/shadr/contents").toFile(),

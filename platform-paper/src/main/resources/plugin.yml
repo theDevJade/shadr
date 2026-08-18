@@ -2,9 +2,6 @@ name: shadr
 version: '${version}'
 main: dev.shadr.paper.ShadrPlugin
 api-version: '1.21'
-# Soft: shadr runs perfectly well without it, and only gains the ability to resolve other
-# plugins' placeholders in page text when it is present. Declared so the server enables
-# PlaceholderAPI first, because the check in PapiPlaceholders runs during shadr's own onEnable.
 softdepend: [PlaceholderAPI]
 folia-supported: false
 description: Screen-space UI built from display entities and font glyphs.
@@ -12,7 +9,7 @@ description: Screen-space UI built from display entities and font glyphs.
 commands:
   shadr:
     description: Open, close, and reload shadr pages.
-    usage: /shadr <open|close|reload|pack|pages|shader|editor|update>
+    usage: /shadr <open|close|reload|pack|pages|shader|stream|editor|update>
     permission: shadr.command
 
 permissions:

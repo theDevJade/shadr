@@ -15,6 +15,7 @@
 #define SHADR_MODE_HUD 1.0
 #define SHADR_MODE_FIELD 2.0
 #define SHADR_MODE_BLUR 4.0
+#define SHADR_MODE_STREAM 8.0
 
 out float shadrMode;
 

@@ -33,8 +33,14 @@ Essentially, vertex reprojection below a threshold, along with SDF math. Shadr u
     - [x] Custom videoplayer codec and storage-efficient rendering
     - [x] Composable screens, and HUD
     - [x] Resource pack generation
+    - [x] Videos, baked and streamed.
+    - [x] 1080p@60fps streamed videos
+    - [] Allow multi aspect videos (TODO)
+    - [] Implement downscaling videos to match size (TODO)
+    - World-space UI (TODO)
     - [] Multi-version support past 26.2 (TODO)
     - [] Improve editor consistency (TODO)
+    - 
 
 
 ## Running it

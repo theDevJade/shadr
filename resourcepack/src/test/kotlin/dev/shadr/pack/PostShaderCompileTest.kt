@@ -27,6 +27,15 @@ class PostShaderCompileTest {
         };
     """.trimIndent()
 
+    private val generated = mapOf(
+        "shadr_map.glsl" to dev.shadr.core.stream.MapPalette.glsl() + "\n" +
+            dev.shadr.core.stream.StreamFormat.glsl() + "\n" +
+            dev.shadr.core.stream.StreamLayout.glsl() + "\n" +
+            dev.shadr.core.stream.StreamImage.glsl() + "\n" +
+            dev.shadr.core.stream.StreamBlocks.glsl() + "\n" +
+            dev.shadr.core.stream.StreamCodec.glsl(dev.shadr.core.stream.StreamPresets.CODEC_1080),
+    )
+
     private fun compiler(): Boolean = runCatching {
         ProcessBuilder("glslangValidator", "-v").redirectErrorStream(true).start().waitFor() == 0
     }.getOrDefault(false)
@@ -48,7 +57,12 @@ class PostShaderCompileTest {
                     continue
                 }
                 val include = File(overlay, "include/$name")
-                assertTrue(include.isFile, "${file.name} imports $name, which does not exist")
+                if (!include.isFile) {
+                    val produced = generated[name]
+                    assertTrue(produced != null, "${file.name} imports $name, which does not exist")
+                    appendLine(produced)
+                    continue
+                }
                 appendLine(
                     resolve(include, seen).lineSequence()
                         .filterNot { it.trimStart().startsWith("#version") }

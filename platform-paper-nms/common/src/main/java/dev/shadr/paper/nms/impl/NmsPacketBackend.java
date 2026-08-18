@@ -16,11 +16,14 @@ import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientboundBundlePacket;
+import net.minecraft.network.protocol.game.ClientboundMapItemDataPacket;
 import net.minecraft.network.protocol.game.ClientboundRemoveEntitiesPacket;
 import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.level.saveddata.maps.MapId;
+import net.minecraft.world.level.saveddata.maps.MapItemSavedData;
 import net.minecraft.world.phys.Vec3;
 import org.bukkit.Location;
 import org.bukkit.craftbukkit.entity.CraftPlayer;
@@ -40,7 +43,7 @@ public final class NmsPacketBackend implements PacketBackend {
     }
 
     @Override
-    public void spawn(Player viewer, int entityId, FakeEntityKind kind, Location at) {
+    public void spawn(Player viewer, int entityId, FakeEntityKind kind, Location at, int data) {
         send(viewer, new net.minecraft.network.protocol.game.ClientboundAddEntityPacket(
                 entityId,
                 UUID.randomUUID(),
@@ -50,7 +53,7 @@ public final class NmsPacketBackend implements PacketBackend {
                 at.getPitch(),
                 at.getYaw(),
                 Types.of(kind),
-                0,
+                data,
                 Vec3.ZERO,
                 at.getYaw()));
     }
@@ -86,6 +89,21 @@ public final class NmsPacketBackend implements PacketBackend {
     @Override
     public void teleport(Player viewer, int entityId, Location to) {
         send(viewer, Teleport.create(entityId, to));
+    }
+
+    @Override
+    public void mapData(Player viewer, int mapId, int startX, int startY, int width, int height, byte[] colors) {
+        if (width <= 0 || height <= 0) return;
+        if (colors.length != width * height) {
+            throw new IllegalArgumentException(
+                    "patch is " + width + "x" + height + " but carries " + colors.length + " bytes");
+        }
+        send(viewer, new ClientboundMapItemDataPacket(
+                new MapId(mapId),
+                (byte) 0,
+                false,
+                null,
+                new MapItemSavedData.MapPatch(startX, startY, width, height, colors)));
     }
 
     @Override

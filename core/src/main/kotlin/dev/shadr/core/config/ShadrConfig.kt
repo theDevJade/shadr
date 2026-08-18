@@ -21,6 +21,7 @@ data class ShadrConfig(
     val editor: EditorConfig = EditorConfig(),
     val updates: UpdateConfig = UpdateConfig(),
     val experimental: ExperimentalConfig = ExperimentalConfig(),
+    val stream: StreamConfig = StreamConfig(),
 ) {
     companion object {
         fun load(file: File): ShadrConfig {
@@ -101,6 +102,18 @@ data class ShadrConfig(
             ),
             experimental = ExperimentalConfig(
                 mousePrediction = node.bool("experimental.mouse-prediction", fallback = true),
+            ),
+            stream = StreamConfig(
+                enabled = node.bool("stream.enabled"),
+                profile = StreamProfile.entries.firstOrNull {
+                    it.name.equals(node.string("stream.profile")?.trim(), ignoreCase = true)
+                } ?: StreamProfile.QUALITY,
+                slots = node.int("stream.slots", fallback = 0),
+                regionX = node.int("stream.region-x", fallback = 0),
+                regionY = node.int("stream.region-y", fallback = 0),
+                mapIdBase = node.int("stream.map-id-base", fallback = 32_000),
+                fps = node.number("stream.fps", fallback = 0.0),
+                probe = node.bool("stream.probe"),
             ),
         )
     }
@@ -195,3 +208,31 @@ data class UpdateConfig(
 }
 
 data class ExperimentalConfig(val mousePrediction: Boolean = true)
+
+enum class StreamProfile { QUALITY, BROADCAST }
+
+data class StreamConfig(
+    val enabled: Boolean = false,
+    val profile: StreamProfile = StreamProfile.QUALITY,
+    val slots: Int = 0,
+    val regionX: Int = 0,
+    val regionY: Int = 0,
+    val mapIdBase: Int = 32_000,
+    val fps: Double = 0.0,
+    val probe: Boolean = false,
+) {
+    fun geometry(): dev.shadr.core.stream.StreamGeometry {
+        val base = when (profile) {
+            StreamProfile.QUALITY -> dev.shadr.core.stream.StreamGeometry.DEFAULT
+            StreamProfile.BROADCAST -> dev.shadr.core.stream.StreamGeometry.BROADCAST
+        }
+        return base.copy(
+            slots = if (slots > 0) slots else base.slots,
+            regionX = regionX,
+            regionY = regionY,
+            mapIdBase = mapIdBase,
+            fps = if (fps > 0.0) fps else base.fps,
+            probe = probe,
+        )
+    }
+}

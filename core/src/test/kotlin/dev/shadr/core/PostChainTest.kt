@@ -48,8 +48,12 @@ class PostChainTest {
             "hud_fragment.glsl exposes no way to read the tag",
         )
         assertTrue(
-            fragment.contains("mod(shadr_mode(), 4.0)"),
+            fragment.contains("mod(floor(shadr_mode() / bit), 2.0)"),
             "the mode is a flag set: a rounded blur panel is both a distance field and a panel",
+        )
+        assertTrue(
+            fragment.contains("return shadr_has_mode(4.0)"),
+            "the blur tag must be read as its own bit, not as a magnitude test",
         )
         assertTrue(
             File(overlay, "core/text.fsh").readText().contains("SHADR_BLUR_KEY"),

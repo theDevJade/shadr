@@ -38,6 +38,7 @@ public final class MinestomBridge implements PlatformBridge {
     private final MinestomHudSink hud;
     private final MinestomInput input;
     private final MinestomWorldDisplays world;
+    private final MinestomStreamSink stream;
 
     public MinestomBridge(Function<String, Instance> instances) {
         this(instances, () -> false);
@@ -55,6 +56,7 @@ public final class MinestomBridge implements PlatformBridge {
         this.camera = new MinestomCamera(players, postEffects);
         this.hud = new MinestomHudSink(players, camera);
         this.input = new MinestomInput(players, camera);
+        this.stream = new MinestomStreamSink(players, camera);
     }
 
     @Override public HudSink hud() { return hud; }
@@ -67,6 +69,7 @@ public final class MinestomBridge implements PlatformBridge {
     public MinestomCamera cameraControl() { return camera; }
     public MinestomInput inputSource() { return input; }
     public MinestomPlayers playerRegistry() { return players; }
+    public MinestomStreamSink streamSink() { return stream; }
 
     private final Map<String, UUID> sentPacks = new ConcurrentHashMap<>();
 

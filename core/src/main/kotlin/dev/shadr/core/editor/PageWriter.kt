@@ -359,6 +359,7 @@ class PageWriter {
         element.item?.takeIf { it.isNotBlank() }?.let {
             node.put(element.type.sourceKey, scalar(Value.Text(it)))
         }
+        if (element.stream) node.put("stream", scalar(Value.Text("true")))
         element.rounding?.let { rounding ->
             put(node, "rounding.size", Value.Text(rounding.size.id))
             rounding.radius?.let { put(node, "rounding.radius", Value.Num(it)) }
@@ -392,6 +393,7 @@ class PageWriter {
         if (before.rotationDeg != after.rotationDeg) changes["rotationDeg"] = Value.Num(after.rotationDeg)
         if (before.text != after.text) changes["text"] = Value.Text(after.text)
         if (before.item != after.item) changes[after.type.sourceKey] = Value.Text(after.item.orEmpty())
+        if (before.stream != after.stream) changes["stream"] = Value.Text(after.stream.toString())
         if (before.font != after.font) changes["font"] = Value.Text(after.font)
         if (before.enabled != after.enabled) changes["enabled"] = Value.Text(after.enabled.toString())
         if (before.type != after.type) changes["type"] = Value.Text(after.type.id)
