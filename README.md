@@ -27,20 +27,20 @@ You write a page in YAML, or in the editor:
 Essentially, vertex reprojection below a threshold, along with SDF math. Shadr uses custom fonts, core shader overriding, and some real hacky stuff to make everything render.
 
 ## Features
-    - [x] Custom UI
-    - [x] Custom SDFs for rounded components
-    - [x] Custom shaders rendering in worldspace
-    - [x] Custom videoplayer codec and storage-efficient rendering
-    - [x] Composable screens, and HUD
-    - [x] Resource pack generation
-    - [x] Videos, baked and streamed.
-    - [x] 1080p@60fps streamed videos
-    - [] Allow multi aspect videos (TODO)
-    - [] Implement downscaling videos to match size (TODO)
-    - World-space UI (TODO)
-    - [] Multi-version support past 26.2 (TODO)
-    - [] Improve editor consistency (TODO)
-    - 
+
+- [x] Custom UI
+- [x] Custom SDFs for rounded components
+- [x] Custom shaders rendering in worldspace
+- [x] Custom videoplayer codec and storage-efficient rendering
+- [x] Composable screens, and HUD
+- [x] Resource pack generation
+- [x] Videos, baked and streamed
+- [x] 1080p@60fps streamed videos
+- [ ] Multi-aspect video support
+- [ ] Downscaling videos to match size
+- [ ] World-space UI
+- [ ] Multi-version support past 26.2
+- [ ] Improve editor consistency
 
 
 ## Running it
