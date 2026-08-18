@@ -7,7 +7,6 @@
 package dev.shadr.paper
 
 import dev.shadr.core.PlayerId
-import dev.shadr.core.spi.CameraControl
 import org.bukkit.Bukkit
 import org.bukkit.GameMode
 import org.bukkit.Location
@@ -24,7 +23,7 @@ import java.util.UUID
 class PaperCamera(
     private val plugin: Plugin,
     private val postEffects: () -> Boolean = { false },
-) : CameraControl {
+) : ShadrCamera {
     private class Session(
         val eye: Entity,
         val seat: Entity,
@@ -85,17 +84,19 @@ class PaperCamera(
         }.also { bukkit.showEntity(plugin, it) }
     }
 
-    fun follow(player: Player) {
+    override fun clickTargetsEnabled(player: PlayerId): Boolean = sessions[player.uuid()]?.clickTarget != null
+
+    override fun follow(player: Player) {
         val session = sessions[player.uniqueId] ?: return
         val target = session.clickTarget ?: return
         val eye = player.eyeLocation
         target.teleport(eye.clone().add(eye.direction.multiply(CLICK_TARGET_DISTANCE)))
     }
 
-    fun isCameraEntity(entity: Entity): Boolean =
+    override fun isCameraEntity(entity: Entity): Boolean =
         sessions.values.any { it.eye == entity || it.seat == entity || it.clickTarget == entity }
 
-    fun stopAll() {
+    override fun stopAll() {
         sessions.keys.toList().forEach { stop(PlayerId(it.toString())) }
     }
 

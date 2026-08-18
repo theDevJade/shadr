@@ -11,20 +11,13 @@ import dev.shadr.core.TextAlignment
 import dev.shadr.core.hud.DisplayMeta
 import dev.shadr.core.hud.HudDiff
 import dev.shadr.core.hud.HudDraw
-import dev.shadr.core.spi.HudSink
-import io.papermc.paper.datacomponent.DataComponentTypes
-import io.papermc.paper.datacomponent.item.CustomModelData
-import io.papermc.paper.datacomponent.item.DyedItemColor
 import org.bukkit.Bukkit
 import org.bukkit.Location
-import org.bukkit.NamespacedKey
-import org.bukkit.Registry
 import org.bukkit.entity.Display
 import org.bukkit.entity.Entity
 import org.bukkit.entity.ItemDisplay
 import org.bukkit.entity.Player
 import org.bukkit.entity.TextDisplay
-import org.bukkit.inventory.ItemStack
 import org.bukkit.plugin.Plugin
 import org.bukkit.util.Transformation
 import org.joml.AxisAngle4f
@@ -32,7 +25,7 @@ import org.joml.Quaternionf
 import org.joml.Vector3f
 import java.util.UUID
 
-class PaperHudSink(private val plugin: Plugin) : HudSink {
+class PaperHudSink(private val plugin: Plugin) : ShadrHudSink {
     private class PlayerHud(
         val mount: Entity,
         val parts: MutableMap<String, Display> = mutableMapOf(),
@@ -84,7 +77,7 @@ class PaperHudSink(private val plugin: Plugin) : HudSink {
         huds[bukkit.uniqueId] = PlayerHud(mount)
     }
 
-    fun ensureMounted(player: Player) {
+    override fun ensureMounted(player: Player) {
         val hud = huds[player.uniqueId] ?: return
         if (!hud.mount.isValid) {
             huds.remove(player.uniqueId)
@@ -144,7 +137,7 @@ class PaperHudSink(private val plugin: Plugin) : HudSink {
                     TextAlignment.CENTER -> TextDisplay.TextAlignment.CENTER
                 }
             }
-            is ItemDisplay -> setItemStack(draw.item?.let { resolveItem(it, draw) })
+            is ItemDisplay -> setItemStack(Displays.hudItem(draw))
             else -> Unit
         }
     }
@@ -157,29 +150,6 @@ class PaperHudSink(private val plugin: Plugin) : HudSink {
     private fun Display.kindMatches(draw: HudDraw): Boolean = when (draw.kind) {
         HudDraw.Kind.TEXT -> this is TextDisplay
         HudDraw.Kind.ITEM -> this is ItemDisplay
-    }
-
-    private fun resolveItem(id: String, draw: HudDraw): ItemStack? {
-        val key = NamespacedKey.fromString(id.lowercase()) ?: return null
-        val material = Registry.MATERIAL.get(key) ?: return null
-        val stack = ItemStack(material)
-
-        draw.itemModel?.let { model ->
-            NamespacedKey.fromString(model)?.let { stack.setData(DataComponentTypes.ITEM_MODEL, it) }
-        }
-        draw.itemCustomModelData?.let { bucket ->
-            stack.setData(
-                DataComponentTypes.CUSTOM_MODEL_DATA,
-                CustomModelData.customModelData().addFloat(bucket.toFloat()),
-            )
-        }
-        draw.tint?.let { tint ->
-            stack.setData(
-                DataComponentTypes.DYED_COLOR,
-                DyedItemColor.dyedItemColor(org.bukkit.Color.fromRGB(tint.r, tint.g, tint.b)),
-            )
-        }
-        return stack
     }
 
     private fun PlayerId.bukkit(): Player? = runCatching { Bukkit.getPlayer(UUID.fromString(uuid)) }.getOrNull()

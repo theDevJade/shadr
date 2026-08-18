@@ -11,11 +11,20 @@ dependencies {
     testImplementation(libs.paper.api)
 }
 
+sourceSets.named("main") {
+    java.srcDir(rootProject.file("platform-paper-nms/api/src/main/java"))
+}
+
+val nmsBundle: File = rootProject.file("platform-paper-nms/build/libs/shadr-paper-nms-$version.jar")
+
 tasks.jar {
     archiveBaseName.set("shadr-paper")
 
     from(rootProject.file("LICENSE")) { into("META-INF") }
     from(rootProject.file("NOTICE")) { into("META-INF") }
+
+    inputs.file(nmsBundle).optional(true).withPathSensitivity(PathSensitivity.NAME_ONLY)
+    from(provider { if (nmsBundle.isFile) zipTree(nmsBundle) else emptyList<Any>() })
 
     from(configurations.runtimeClasspath.map { classpath ->
         classpath.map { if (it.isDirectory) it else zipTree(it) }

@@ -47,14 +47,12 @@ resource-pack:
       volume: 1.0
 
 rendering:
-  # Shader packs (Iris/OptiFine) reproject geometry themselves and fight make_hud().
-  # With this on, HUDs are placed in front of the camera in world space and layers
-  # are packed into an epsilon range, not whole units.
   fix-shaders: false
   fix-shaders-y-offset: 2.1006
   fix-shaders-forward-offset: 0.3781
   fix-shaders-layer-gap: 0.000002
   hud-scale-divisor: 1000.0
+  packet-entities: true
 
 editor:
   placeholders:
@@ -69,103 +67,37 @@ editor:
     enabled: true
     volume: 1.0
 
-  # The browser editor: a WYSIWYG canvas over the pages in this data folder. Edits
-  # reach any player with that page open on the next tick, through the same renderer
-  # the game draws with, so the browser and the client cannot disagree.
-  #
-  # Off by default. This endpoint edits files on disk and changes what every player
-  # sees, so it is an open port nobody asked for unless you ask for it.
   web:
     enabled: false
     port: 8124
-    # Loopback: authoring happens from this machine. To reach it from elsewhere, use
-    # an SSH tunnel (ssh -L 8124:127.0.0.1:8124 you@server), a reverse proxy, or set
-    # tls-keystore below. Without one of those the token is readable in transit, and
-    # that token edits files and changes what every player sees.
+    # Loopback
     bind: '127.0.0.1'
-    # Blank generates one on first start and writes it to editor-token.txt, which is
-    # made owner-readable where the filesystem supports it. The URL printed at
-    # startup already contains it.
+    # Blank generates one on first start.
     token: ''
-    # Run with no authentication at all. Honoured only when bind is loopback; the
-    # editor refuses to start unauthenticated on any other address.
+    # Run with no authentication at all.
     allow-insecure: false
-    # Hostname to put in links handed out by /shadr editor. Blank uses the server's
-    # own address. Set this when players reach the box by a name that is not what
-    # `bind` says: behind a proxy, through a tunnel, or on a NATed host.
     public-host: ''
     ui-dir: 'editor-web'
-    # Serve the editor over HTTPS from a PKCS12 or JKS keystore. Relative paths
-    # resolve against this data folder. Blank is plain HTTP, which is what loopback
-    # wants; set this whenever `bind` is not loopback and there is no proxy in front.
-    #
-    # From a real certificate:
-    #   openssl pkcs12 -export -out editor.p12 -inkey privkey.pem -in fullchain.pem
-    # Or self-signed, for a LAN or a tunnel:
-    #   keytool -genkeypair -alias shadr -keyalg RSA -keysize 2048 -validity 730 \
-    #           -storetype PKCS12 -keystore editor.p12 -dname "CN=localhost"
-    #
-    # A keystore that is set but will not load stops the editor, and will not quietly
-    # falling back to HTTP. An https link that silently is not is worse than none.
     tls-keystore: ''
     tls-password: ''
-    # Only if the key's password differs from the store's, which PKCS12 rarely does.
     tls-key-password: ''
 
 updates:
-  # Ask GitHub whether a newer shadr has been published. One HTTPS request every
-  # `interval-hours`, always off the main thread, and never fatal: a server that
-  # cannot reach GitHub logs a line and keeps rendering.
   check: true
 
-  # Download the new jar into plugins/update/ automatically. Off by default, and the
-  # split from `check` is the point: being told a fix exists is free, and replacing
-  # the jar changes what the server runs, and that call is yours to make.
-  #
-  # Nothing is ever swapped under a running server either way. A staged jar sits in
-  # the update folder until the next start, where the platform applies it before any
-  # of it is loaded. /shadr update cancel removes it again.
   download: false
 
-  # Tell holders of shadr.update when they join, not just the console log.
   notify-ops: true
   interval-hours: 6
 
-  # auto        follow the channel this build is on: a -rc or -SNAPSHOT jar is
-  #             offered prereleases, a stable jar only stable releases
-  # stable      stable releases only
-  # prerelease  everything, including release candidates
-  #
-  # `auto` is the default because shadr ships as a prerelease today: `stable` would
-  # tell everyone running one that they are up to date until 1.0 exists, and
-  # `prerelease` would walk a production server onto a release candidate later on.
+  # auto
+  # stable
+  # prerelease
   channel: auto
 
-  # owner/name. Change this on a fork so your builds check your releases; leaving it
-  # would offer your users an upstream jar that overwrites your build.
   repository: 'theDevJade/shadr'
 
-  # A base64 Ed25519 public key, in X.509 SubjectPublicKeyInfo form.
-  #
-  # Read what this does and does not buy you. A staged jar is always checked against
-  # the <jar>.sha256 published beside it, and a release with no checksum is refused.
-  # But the checksum comes from the same release as the jar, so anyone who can
-  # publish a release can publish a matching checksum: that is integrity, not proof
-  # of who built it.
-  #
-  # Set this and the release must also carry a <jar>.sig that verifies against the
-  # key. A signature made offline with a key that never touches CI is the only thing
-  # here that survives a compromised release pipeline.
-  #
-  #   openssl genpkey -algorithm ed25519 -out shadr-release.key
-  #   openssl pkey -in shadr-release.key -pubout -outform DER | base64
-  #   openssl pkeyutl -sign -rawin -inkey shadr-release.key \
-  #     -in shadr-paper-<version>.jar | base64 > shadr-paper-<version>.jar.sig
-  #
-  # Blank means checksum only.
   signing-key: ''
 
 experimental:
-  # Extrapolate the cursor forward by the player's ping so it does not trail the
-  # mouse. Capped at 4 ticks and 10% of the screen, and frozen on direction change.
   mouse-prediction: true

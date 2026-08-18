@@ -6,7 +6,6 @@
  */
 package dev.shadr.paper
 
-import dev.shadr.core.shader.ShaderApi
 import dev.shadr.core.spi.BillboardMode
 import dev.shadr.core.spi.WorldDisplays
 import dev.shadr.core.spi.WorldShaderSpec
@@ -15,7 +14,6 @@ import org.bukkit.Location
 import org.bukkit.NamespacedKey
 import org.bukkit.entity.Display
 import org.bukkit.entity.ItemDisplay
-import org.bukkit.inventory.ItemStack
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.Plugin
 import org.bukkit.util.Transformation
@@ -30,7 +28,7 @@ class PaperWorldDisplays(private val plugin: Plugin) : WorldDisplays {
 
         return runCatching {
             world.spawn(location, ItemDisplay::class.java) { display ->
-                display.setItemStack(itemFor(spec))
+                display.setItemStack(Displays.shaderItem(spec))
                 display.billboard = when (spec.billboard) {
                     BillboardMode.FIXED -> Display.Billboard.FIXED
                     BillboardMode.VERTICAL -> Display.Billboard.VERTICAL
@@ -55,22 +53,6 @@ class PaperWorldDisplays(private val plugin: Plugin) : WorldDisplays {
             }
             true
         }.getOrElse { false }
-    }
-
-    private fun itemFor(spec: WorldShaderSpec): ItemStack {
-        val material = org.bukkit.Material.matchMaterial(ShaderApi.BASE_ITEM)
-            ?: org.bukkit.Material.LEATHER_HORSE_ARMOR
-        val stack = ItemStack(material)
-
-        stack.editMeta { meta ->
-            meta.itemModel = NamespacedKey.fromString(ShaderApi.itemModelOf(spec.shader))
-            (meta as? org.bukkit.inventory.meta.LeatherArmorMeta)?.setColor(
-                org.bukkit.Color.fromRGB(
-                    dev.shadr.core.shader.ShaderTint.encode(spec.color, spec.scale),
-                ),
-            )
-        }
-        return stack
     }
 
     override fun despawn(handle: String): Boolean {

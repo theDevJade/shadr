@@ -27,6 +27,19 @@ public final class PacketBackends {
         MODULES.put("1.21.9", "v1_21_11");
         MODULES.put("1.21.10", "v1_21_11");
         MODULES.put("1.21.11", "v1_21_11");
+        MODULES.put("26.0", "v26_1");
+        MODULES.put("26.1", "v26_1");
+        MODULES.put("26.1.1", "v26_1");
+        MODULES.put("26.2", "v26_2");
+    }
+
+    private static final Map<String, String> FAMILIES = new LinkedHashMap<>();
+
+    static {
+        FAMILIES.put("1.21.", "v1_21_11");
+        FAMILIES.put("26.0.", "v26_1");
+        FAMILIES.put("26.1.", "v26_1");
+        FAMILIES.put("26.2.", "v26_2");
     }
 
     private PacketBackends() {}
@@ -35,9 +48,9 @@ public final class PacketBackends {
         String v = minecraftVersion.trim();
         String exact = MODULES.get(v);
         if (exact != null) return exact;
-        if (v.startsWith("26.1") || v.startsWith("26.0")) return "v26_1";
-        if (v.startsWith("26.")) return "v26_2";
-        if (v.startsWith("1.21")) return "v1_21_11";
+        for (Map.Entry<String, String> family : FAMILIES.entrySet()) {
+            if (v.startsWith(family.getKey())) return family.getValue();
+        }
         return null;
     }
 

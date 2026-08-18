@@ -92,6 +92,8 @@ configure(subprojects.filter { it.name != "api" }) {
     tasks.named("compileJava") { dependsOn(generateBackend) }
 }
 
+tasks.named<Jar>("jar") { enabled = false }
+
 val bundle by tasks.registering(Jar::class) {
     archiveBaseName.set("shadr-paper-nms")
     destinationDirectory.set(layout.buildDirectory.dir("libs"))
@@ -102,4 +104,4 @@ val bundle by tasks.registering(Jar::class) {
     }
 }
 
-tasks.named("build") { dependsOn(bundle) }
+tasks.named("assemble") { dependsOn(bundle) }

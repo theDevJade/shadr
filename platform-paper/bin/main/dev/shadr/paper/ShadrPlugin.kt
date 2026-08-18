@@ -72,8 +72,16 @@ class ShadrPlugin : JavaPlugin() {
         config = ShadrConfig.load(File(dataFolder, "config.yml"))
         lang = loadLang()
 
+        val backend = if (config.rendering.packetEntities) {
+            Displays.backendOrNull { logger.warning("shadr: $it") }
+        } else {
+            null
+        }
+
         bridge = PaperBridge(
             this,
+            backend = backend,
+            worldShaderState = File(dataFolder, "world-shaders.yml"),
             postEffects = {
                 environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.FROSTED_GLASS) ||
                     environment.isEnabled(dev.shadr.core.shader.EnvironmentEffect.VIDEO)
@@ -107,7 +115,10 @@ class ShadrPlugin : JavaPlugin() {
 
         server.scheduler.runTaskTimer(this, Runnable { tick() }, 1L, 1L)
         detectPlaceholderApi()
-        logger.info("shadr enabled: ${pages.size} page(s), pack ${packUrl ?: "not hosted"}")
+        logger.info(
+            "shadr enabled: ${pages.size} page(s), pack ${packUrl ?: "not hosted"}, " +
+                if (bridge.packetBacked) "packet-only entities" else "server display entities",
+        )
     }
 
     override fun onDisable() {
@@ -134,6 +145,7 @@ class ShadrPlugin : JavaPlugin() {
                 onPageChanged = ::applyEditedPage,
                 onShadersChanged = ::rebuildPackForShaders,
                 images = dev.shadr.pack.AtlasImageSource(File(dataFolder, "contents")) { lastAtlas },
+                videos = dev.shadr.pack.LibraryVideoSource(File(dataFolder, "contents")),
                 log = { logger.info("shadr: $it") },
             )
         }.getOrElse {

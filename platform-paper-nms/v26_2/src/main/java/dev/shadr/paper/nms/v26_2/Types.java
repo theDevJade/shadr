@@ -21,6 +21,7 @@ final class Types {
             case BLOCK_DISPLAY -> EntityTypes.BLOCK_DISPLAY;
             case INTERACTION -> EntityTypes.INTERACTION;
             case ENDERMAN -> EntityTypes.ENDERMAN;
+            case CREEPER -> EntityTypes.CREEPER;
         };
     }
 }

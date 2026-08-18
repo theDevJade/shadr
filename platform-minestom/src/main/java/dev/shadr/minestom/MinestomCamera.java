@@ -71,13 +71,17 @@ public final class MinestomCamera implements CameraControl {
         final Entity camera = new Entity(postEffects.getAsBoolean() ? EntityType.CREEPER : EntityType.TEXT_DISPLAY);
         camera.setNoGravity(true);
         camera.setInvisible(true);
+        camera.setAutoViewable(false);
         final Entity mount = new Entity(EntityType.TEXT_DISPLAY);
         mount.setNoGravity(true);
+        mount.setAutoViewable(false);
 
         CompletableFuture.allOf(
                 camera.setInstance(entity.getInstance(), eye),
                 mount.setInstance(entity.getInstance(), base)
         ).thenRun(() -> {
+            camera.addViewer(entity);
+            mount.addViewer(entity);
             seat.camera = camera;
             seat.mount = mount;
             mount.addPassenger(entity);

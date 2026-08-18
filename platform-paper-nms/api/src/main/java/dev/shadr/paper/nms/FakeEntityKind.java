@@ -12,4 +12,5 @@ public enum FakeEntityKind {
     BLOCK_DISPLAY,
     INTERACTION,
     ENDERMAN,
+    CREEPER,
 }

@@ -92,10 +92,12 @@ public final class MinestomHudSink implements HudSink {
                     ? EntityType.ITEM_DISPLAY
                     : EntityType.TEXT_DISPLAY);
             created.setNoGravity(true);
+            created.setAutoViewable(false);
             hud.parts.put(draw.getKey(), created);
 
             created.setInstance(hud.carrier.getInstance(), hud.carrier.getPosition())
                     .thenRun(() -> {
+                        created.addViewer(owner);
                         hud.carrier.addPassenger(created);
                         apply(created, draw);
                     });

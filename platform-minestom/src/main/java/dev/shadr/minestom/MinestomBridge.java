@@ -24,6 +24,7 @@ import net.minestom.server.instance.Instance;
 import net.minestom.server.timer.TaskSchedule;
 
 import java.net.URI;
+import java.nio.file.Path;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.UUID;
@@ -43,7 +44,14 @@ public final class MinestomBridge implements PlatformBridge {
     }
 
     public MinestomBridge(Function<String, Instance> instances, BooleanSupplier postEffects) {
-        this.world = new MinestomWorldDisplays(instances);
+        this(instances, postEffects, Path.of("world-shaders.yml"));
+    }
+
+    public MinestomBridge(
+            Function<String, Instance> instances,
+            BooleanSupplier postEffects,
+            Path worldShaderState) {
+        this.world = new MinestomWorldDisplays(instances, worldShaderState);
         this.camera = new MinestomCamera(players, postEffects);
         this.hud = new MinestomHudSink(players, camera);
         this.input = new MinestomInput(players, camera);

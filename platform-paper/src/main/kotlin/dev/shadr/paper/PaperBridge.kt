@@ -16,27 +16,44 @@ import dev.shadr.core.spi.InputSource
 import dev.shadr.core.spi.PlatformBridge
 import dev.shadr.core.spi.PlayerRegistry
 import dev.shadr.core.spi.ResourcePackService
+import dev.shadr.paper.nms.PacketBackend
 import org.bukkit.Bukkit
 import org.bukkit.event.EventHandler
 import org.bukkit.event.EventPriority
 import org.bukkit.event.Listener
 import org.bukkit.event.entity.EntityDamageByEntityEvent
+import org.bukkit.event.player.PlayerAnimationEvent
+import org.bukkit.event.player.PlayerAnimationType
 import org.bukkit.event.player.PlayerInteractEvent
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import org.bukkit.plugin.Plugin
+import java.io.File
 import java.util.UUID
 
 class PaperBridge(
     private val plugin: Plugin,
+    backend: PacketBackend? = null,
+    worldShaderState: File = File(plugin.dataFolder, "world-shaders.yml"),
     postEffects: () -> Boolean = { false },
 ) : PlatformBridge, Listener {
-    val hudSink = PaperHudSink(plugin)
-    val cameraControl = PaperCamera(plugin, postEffects)
+    val packetBacked: Boolean = backend != null
+
+    val hudSink: ShadrHudSink =
+        if (backend != null) PacketHudSink(backend) else PaperHudSink(plugin)
+
+    val cameraControl: ShadrCamera =
+        if (backend != null) PacketCamera(backend, postEffects) else PaperCamera(plugin, postEffects)
+
     private val inputSource = PaperInput(plugin, cameraControl)
     private val registry = PaperPlayerRegistry()
 
-    private val worldDisplays = PaperWorldDisplays(plugin)
+    private val worldDisplays: dev.shadr.core.spi.WorldDisplays =
+        if (backend != null) {
+            PacketWorldDisplays(backend, worldShaderState) { plugin.logger.warning("shadr: $it") }
+        } else {
+            PaperWorldDisplays(plugin)
+        }
 
     override fun hud(): HudSink = hudSink
     override fun world(): dev.shadr.core.spi.WorldDisplays = worldDisplays
@@ -56,10 +73,16 @@ class PaperBridge(
 
     private val sent = java.util.concurrent.ConcurrentHashMap<UUID, UUID>()
 
-    fun tick() = inputSource.tick()
+    fun tick() {
+        inputSource.tick()
+        (worldDisplays as? PacketWorldDisplays)?.tick()
+    }
 
     @EventHandler
-    fun onJoin(event: PlayerJoinEvent) = registry.fireJoin(PlayerId(event.player.uniqueId.toString()))
+    fun onJoin(event: PlayerJoinEvent) {
+        (worldDisplays as? PacketWorldDisplays)?.refresh(event.player)
+        registry.fireJoin(PlayerId(event.player.uniqueId.toString()))
+    }
 
     @EventHandler
     fun onQuit(event: PlayerQuitEvent) {
@@ -67,6 +90,7 @@ class PaperBridge(
         hudSink.clear(id)
         cameraControl.stop(id)
         inputSource.forget(id)
+        (worldDisplays as? PacketWorldDisplays)?.forget(event.player)
         sent.remove(event.player.uniqueId)
         registry.fireQuit(id)
     }
@@ -77,6 +101,16 @@ class PaperBridge(
         if (!cameraControl.isCameraEntity(event.entity)) return
         event.isCancelled = true
         inputSource.queueClick(PlayerId(damager.uniqueId.toString()), rightClick = false)
+    }
+
+    @EventHandler(priority = EventPriority.LOWEST)
+    fun onSwing(event: PlayerAnimationEvent) {
+        if (!packetBacked) return
+        if (event.animationType != PlayerAnimationType.ARM_SWING) return
+        val id = PlayerId(event.player.uniqueId.toString())
+        if (!cameraControl.clickTargetsEnabled(id)) return
+        event.isCancelled = true
+        inputSource.queueClick(id, rightClick = false)
     }
 
     @EventHandler(priority = EventPriority.LOWEST)
@@ -99,7 +133,7 @@ class PaperBridge(
     }
 }
 
-class PaperInput(private val plugin: Plugin, private val camera: PaperCamera) : InputSource {
+class PaperInput(private val plugin: Plugin, private val camera: ShadrCamera) : InputSource {
     private val listeners = mutableListOf<(InputSample) -> Unit>()
     private val keyListeners = mutableMapOf<String, MutableList<(PlayerId) -> Unit>>()
     private val mappers = mutableMapOf<UUID, LookMapper>()
