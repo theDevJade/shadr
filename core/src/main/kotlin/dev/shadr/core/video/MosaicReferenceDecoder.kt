@@ -51,40 +51,120 @@ object MosaicReferenceDecoder {
             )
         }
 
-        val inSuper = ((y % MosaicFormat.SUPER) / MosaicFormat.BLOCK) * MosaicFormat.BLOCKS_PER_SUPER_EDGE +
-            ((x % MosaicFormat.SUPER) / MosaicFormat.BLOCK)
-        val command = clip.data[MosaicFormat.pointer(superblock) + inSuper]
+        val base = MosaicFormat.pointer(superblock)
+        val h0 = clip.data[base]
+        val h1 = clip.data[base + 1]
+        val block =
+            ((y % MosaicFormat.SUPER) / MosaicFormat.BLOCK) * MosaicFormat.BLOCKS_PER_SUPER_EDGE +
+                ((x % MosaicFormat.SUPER) / MosaicFormat.BLOCK)
 
-        return when (MosaicFormat.red(command)) {
+        var mode = 0
+        var commandSlot = 0
+        var payloadOffset = 0
+        var commands = 0
+        for (j in 0 until MosaicFormat.BLOCKS_PER_SUPER) {
+            val n = MosaicFormat.nibble(if (j < 8) h0 else h1, j)
+            if (j == block) {
+                mode = n
+                commandSlot = commands
+            }
+            if (j < block) payloadOffset += MosaicFormat.payloadTexels(n)
+            commands += MosaicFormat.commandTexels(n)
+        }
+
+        val commandAt = base + MosaicFormat.HEADER_TEXELS + commandSlot
+        val payloadAt = base + MosaicFormat.HEADER_TEXELS + commands + payloadOffset
+        val quarter = quarter(x, y)
+
+        return when (mode) {
             MosaicFormat.BLK_SKIP -> sample(previous, clip, x, y)
 
-            MosaicFormat.BLK_MOTION -> sample(
-                previous, clip,
-                x + MosaicFormat.green(command) - MosaicFormat.MV_BIAS,
-                y + MosaicFormat.blue(command) - MosaicFormat.MV_BIAS,
-            )
-
-            MosaicFormat.BLK_DELTA -> {
-                val payload = clip.data[MosaicFormat.pointer(command) + quarter(x, y)]
-                val base = sample(previous, clip, x, y)
-                rgb(
-                    ((base ushr 16) and 0xFF) + MosaicFormat.red(payload) - MosaicFormat.MV_BIAS,
-                    ((base ushr 8) and 0xFF) + MosaicFormat.green(payload) - MosaicFormat.MV_BIAS,
-                    (base and 0xFF) + MosaicFormat.blue(payload) - MosaicFormat.MV_BIAS,
+            MosaicFormat.BLK_MOTION -> {
+                val command = clip.data[commandAt]
+                sample(
+                    previous, clip,
+                    x + MosaicFormat.red(command) - MosaicFormat.MV_BIAS,
+                    y + MosaicFormat.green(command) - MosaicFormat.MV_BIAS,
                 )
             }
 
-            else -> intra(clip, command, x, y)
+            MosaicFormat.BLK_DELTA -> {
+                val payload = clip.data[payloadAt + quarter]
+                offsetFrom(sample(previous, clip, x, y), payload)
+            }
+
+            MosaicFormat.BLK_MOTION_DELTA -> {
+                val command = clip.data[commandAt]
+                val payload = clip.data[payloadAt + quarter]
+                offsetFrom(
+                    sample(
+                        previous, clip,
+                        x + MosaicFormat.red(command) - MosaicFormat.MV_BIAS,
+                        y + MosaicFormat.green(command) - MosaicFormat.MV_BIAS,
+                    ),
+                    payload,
+                )
+            }
+
+            MosaicFormat.BLK_INTRA -> bc1(
+                clip.data[payloadAt + quarter * 2],
+                clip.data[payloadAt + quarter * 2 + 1],
+                x, y,
+            )
+
+            MosaicFormat.BLK_MOTION_RESIDUAL -> {
+                val command = clip.data[commandAt]
+                val residual = bc1(
+                    clip.data[payloadAt + quarter * 2],
+                    clip.data[payloadAt + quarter * 2 + 1],
+                    x, y,
+                )
+                val predicted = sample(
+                    previous, clip,
+                    x + MosaicFormat.red(command) - MosaicFormat.MV_BIAS,
+                    y + MosaicFormat.green(command) - MosaicFormat.MV_BIAS,
+                )
+                rgb(
+                    ((predicted ushr 16) and 0xFF) +
+                        ((residual ushr 16) and 0xFF) - MosaicFormat.RESIDUAL_BIAS,
+                    ((predicted ushr 8) and 0xFF) +
+                        ((residual ushr 8) and 0xFF) - MosaicFormat.RESIDUAL_BIAS,
+                    (predicted and 0xFF) + (residual and 0xFF) - MosaicFormat.RESIDUAL_BIAS,
+                )
+            }
+
+            MosaicFormat.BLK_ENDPOINT_REUSE -> {
+                val command = clip.data[commandAt]
+                bc1(
+                    clip.data[MosaicFormat.pointer(command) + quarter * 2],
+                    clip.data[payloadAt + quarter],
+                    x, y,
+                )
+            }
+
+            else -> {
+                val payload = clip.data[payloadAt + quarter]
+                val entry = MosaicFormat.red(payload) or (MosaicFormat.green(payload) shl 8)
+                val selector = MosaicFormat.blue(payload) or (MosaicFormat.alpha(payload) shl 8)
+                bc1(
+                    clip.data[clip.codebookBase + entry],
+                    clip.data[clip.codebookBase + MosaicFormat.CODEBOOK + selector],
+                    x, y,
+                )
+            }
         }
     }
 
-    private fun intra(clip: MosaicClip, command: Int, x: Int, y: Int): Int {
-        val at = MosaicFormat.pointer(command) + quarter(x, y) * 2
-        val endpoints = clip.data[at]
-        val indices = clip.data[at + 1]
+    private fun offsetFrom(base: Int, payload: Int): Int = rgb(
+        ((base ushr 16) and 0xFF) + MosaicFormat.red(payload) - MosaicFormat.MV_BIAS,
+        ((base ushr 8) and 0xFF) + MosaicFormat.green(payload) - MosaicFormat.MV_BIAS,
+        (base and 0xFF) + MosaicFormat.blue(payload) - MosaicFormat.MV_BIAS,
+    )
 
-        val c0 = expand565((MosaicFormat.green(endpoints) shl 8) or MosaicFormat.red(endpoints))
-        val c1 = expand565((MosaicFormat.alpha(endpoints) shl 8) or MosaicFormat.blue(endpoints))
+    private fun bc1(endpoints: Int, indices: Int, x: Int, y: Int): Int {
+        val e0 = (MosaicFormat.green(endpoints) shl 8) or MosaicFormat.red(endpoints)
+        val e1 = (MosaicFormat.alpha(endpoints) shl 8) or MosaicFormat.blue(endpoints)
+        val palette = MosaicBc1.paletteOf(e0, e1)
 
         val row = when (y % 4) {
             0 -> MosaicFormat.red(indices)
@@ -92,23 +172,12 @@ object MosaicReferenceDecoder {
             2 -> MosaicFormat.blue(indices)
             else -> MosaicFormat.alpha(indices)
         }
-        return when ((row ushr ((x % 4) * 2)) and 3) {
-            0 -> rgb(c0[0], c0[1], c0[2])
-            1 -> rgb(c1[0], c1[1], c1[2])
-            2 -> rgb(
-                (2 * c0[0] + c1[0]) / 3,
-                (2 * c0[1] + c1[1]) / 3,
-                (2 * c0[2] + c1[2]) / 3,
-            )
-            else -> rgb(
-                (c0[0] + 2 * c1[0]) / 3,
-                (c0[1] + 2 * c1[1]) / 3,
-                (c0[2] + 2 * c1[2]) / 3,
-            )
-        }
+        val at = ((row ushr ((x % 4) * 2)) and 3) * 3
+        return rgb(palette[at], palette[at + 1], palette[at + 2])
     }
 
-    fun quarter(x: Int, y: Int): Int = ((y % MosaicFormat.BLOCK) / 4) * 2 + ((x % MosaicFormat.BLOCK) / 4)
+    fun quarter(x: Int, y: Int): Int =
+        ((y % MosaicFormat.BLOCK) / 4) * 2 + ((x % MosaicFormat.BLOCK) / 4)
 
     /** RGB565 to three bytes. */
     fun expand565(packed: Int): IntArray {

@@ -129,6 +129,28 @@ data class EffectList(
 ) : EditorMessage
 
 @Serializable
+data class VideoEntry(
+    val name: String,
+    val width: Int = 0,
+    val height: Int = 0,
+    val seconds: Double = 0.0,
+    val thumbnail: String = "",
+    val issue: String? = null,
+)
+
+@Serializable
+@SerialName("videos")
+data class VideoList(val videos: List<VideoEntry> = emptyList()) : EditorMessage
+
+@Serializable
+@SerialName("uploadVideo")
+data class UploadVideo(val name: String, val extension: String, val data: String) : EditorMessage
+
+@Serializable
+@SerialName("deleteVideo")
+data class DeleteVideo(val name: String) : EditorMessage
+
+@Serializable
 @SerialName("uploadImage")
 data class UploadImage(val name: String, val data: String) : EditorMessage
 

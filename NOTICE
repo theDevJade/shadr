@@ -9,14 +9,6 @@ Third-party material
 --------------------------------------------------------------------------------
 
 Minecraft core shaders (shaders/overlays/)
-
-  Every program under shaders/overlays/*/core/ that carries a vanilla name --
-  entity.vsh, sky.vsh, text.fsh, item.vsh, glint.vsh, position_tex.fsh, the
-  rendertype_* family, and their .json pipeline definitions -- is Minecraft's
-  own core shader, copied from the game client and modified: shadr's vertex
-  re-projection hook and its SDF fragment path are spliced into the vanilla
-  source, and the surrounding code is Mojang's, unchanged.
-
   The files prefixed shadr_, block_hud.*, and everything under
   shaders/overlays/*/include/ are shadr's own and are covered by LICENSE.
 
@@ -34,10 +26,6 @@ Minecraft core shaders (shaders/overlays/)
 
   Shadr is not an official Minecraft product, and is not approved by or
   associated with Mojang Studios or Microsoft.
-
-  Those files carry no copyright banner. Two reasons, and both are load-bearing:
-  the material is not shadr's to stamp, and a comment above "#version" makes the
-  client discard every pipeline define. LicenseHeaderTest enforces their absence.
 
 JetBrains Mono Nerd Font (assets/font/)
 

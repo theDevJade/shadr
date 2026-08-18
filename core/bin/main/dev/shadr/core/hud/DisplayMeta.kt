@@ -16,6 +16,10 @@ object DisplayMeta {
     const val RIGHT_ROTATION = 14
     const val BILLBOARD = 15
     const val BRIGHTNESS = 16
+    const val VIEW_RANGE = 17
+
+    const val ITEM = 23
+    const val ITEM_TRANSFORM = 24
 
     const val TEXT = 23
     const val LINE_WIDTH = 24

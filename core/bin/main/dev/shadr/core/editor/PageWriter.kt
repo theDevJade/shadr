@@ -356,6 +356,9 @@ class PageWriter {
         put(node, "size.height", Value.Num(element.height))
 
         if (element.type.isTextual) node.put("text", scalar(Value.Text(element.text)))
+        element.item?.takeIf { it.isNotBlank() }?.let {
+            node.put(element.type.sourceKey, scalar(Value.Text(it)))
+        }
         element.rounding?.let { rounding ->
             put(node, "rounding.size", Value.Text(rounding.size.id))
             rounding.radius?.let { put(node, "rounding.radius", Value.Num(it)) }
@@ -388,6 +391,7 @@ class PageWriter {
         if (before.color != after.color) changes["color"] = Value.Text(after.color.hex())
         if (before.rotationDeg != after.rotationDeg) changes["rotationDeg"] = Value.Num(after.rotationDeg)
         if (before.text != after.text) changes["text"] = Value.Text(after.text)
+        if (before.item != after.item) changes[after.type.sourceKey] = Value.Text(after.item.orEmpty())
         if (before.font != after.font) changes["font"] = Value.Text(after.font)
         if (before.enabled != after.enabled) changes["enabled"] = Value.Text(after.enabled.toString())
         if (before.type != after.type) changes["type"] = Value.Text(after.type.id)

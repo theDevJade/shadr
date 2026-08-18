@@ -253,6 +253,7 @@ class EditorSession(
             "rotationDeg" -> number?.let { element.copy(rotationDeg = it) } ?: element
             "color" -> Rgb.parse(raw)?.let { element.copy(color = it) } ?: element
             "text" -> element.copy(text = raw)
+            "item", "shader", "video" -> element.copy(item = raw.trim().ifBlank { null })
             "unicode" -> element.copy(unicode = raw)
             "font" -> element.copy(font = raw)
             "id" -> if (raw.isBlank() || page.elements.any { it.id == raw }) element else element.copy(id = raw)

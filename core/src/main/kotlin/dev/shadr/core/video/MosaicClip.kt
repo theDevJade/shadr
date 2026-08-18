@@ -13,6 +13,7 @@ class MosaicClip(
     val fps: Double,
     val data: IntArray,
     val texelCount: Int,
+    val codebookBase: Int = 0,
 ) {
     val superColumns: Int = MosaicFormat.superColumns(width)
 

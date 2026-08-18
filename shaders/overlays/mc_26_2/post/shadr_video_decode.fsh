@@ -27,7 +27,17 @@ out vec4 fragColor;
 #define MOSAIC_BLK_MOTION 1
 #define MOSAIC_BLK_DELTA 2
 #define MOSAIC_BLK_INTRA 3
+#define MOSAIC_BLK_MOTION_DELTA 4
+#define MOSAIC_BLK_MOTION_RESIDUAL 5
+#define MOSAIC_BLK_ENDPOINT_REUSE 6
+#define MOSAIC_BLK_INTRA_VQ 7
 #define MOSAIC_MV_BIAS 128
+#define MOSAIC_RESIDUAL_BIAS 128
+#define MOSAIC_HEADER_TEXELS 2
+#define MOSAIC_CODEBOOK 4096
+
+const int MOSAIC_PAYLOAD_TEXELS[8] = int[8](0, 0, 4, 8, 4, 8, 4, 4);
+const int MOSAIC_COMMAND_TEXELS[8] = int[8](0, 1, 0, 0, 1, 1, 1, 0);
 
 ivec4 mosaic_fetch(int index) {
     return ivec4(round(texelFetch(
@@ -39,7 +49,6 @@ ivec4 mosaic_fetch(int index) {
 int mosaic_pointer(ivec4 texel) {
     return (texel.g << 16) | (texel.b << 8) | texel.a;
 }
-
 
 ivec3 mosaic_previous(ivec2 size, int x, int y) {
     int cx = clamp(x, 0, size.x - 1);
@@ -54,21 +63,29 @@ ivec3 mosaic_expand565(int packed) {
     return ivec3((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2));
 }
 
-ivec3 mosaic_intra(ivec4 command, int quarter, int x, int y) {
-    int at = mosaic_pointer(command) + quarter * 2;
-    ivec4 endpoints = mosaic_fetch(at);
-    ivec4 indices = mosaic_fetch(at + 1);
-
-    ivec3 c0 = mosaic_expand565((endpoints.g << 8) | endpoints.r);
-    ivec3 c1 = mosaic_expand565((endpoints.a << 8) | endpoints.b);
-
-    int row = y % 4 == 0 ? indices.r : (y % 4 == 1 ? indices.g : (y % 4 == 2 ? indices.b : indices.a));
-    int pick = (row >> ((x % 4) * 2)) & 3;
-
+ivec3 mosaic_palette(int e0, int e1, int pick) {
+    ivec3 c0 = mosaic_expand565(e0);
+    ivec3 c1 = mosaic_expand565(e1);
     if (pick == 0) return c0;
     if (pick == 1) return c1;
-    if (pick == 2) return (2 * c0 + c1) / 3;
-    return (c0 + 2 * c1) / 3;
+    if (e0 > e1) {
+        if (pick == 2) return (2 * c0 + c1) / 3;
+        return (c0 + 2 * c1) / 3;
+    }
+    if (pick == 2) return (c0 + c1) / 2;
+    return ivec3(0);
+}
+
+int mosaic_pick(ivec4 indices, int x, int y) {
+    int row = y % 4 == 0 ? indices.r
+        : (y % 4 == 1 ? indices.g : (y % 4 == 2 ? indices.b : indices.a));
+    return (row >> ((x % 4) * 2)) & 3;
+}
+
+ivec3 mosaic_bc1(ivec4 endpoints, ivec4 indices, int x, int y) {
+    int e0 = (endpoints.g << 8) | endpoints.r;
+    int e1 = (endpoints.a << 8) | endpoints.b;
+    return mosaic_palette(e0, e1, mosaic_pick(indices, x, y));
 }
 
 void main() {
@@ -99,22 +116,78 @@ void main() {
     } else if (plane.r == MOSAIC_SB_MOTION) {
         colour = mosaic_previous(size, x + plane.g - MOSAIC_MV_BIAS, y + plane.b - MOSAIC_MV_BIAS);
     } else {
-        int inSuper =
+        int base = mosaic_pointer(plane);
+        ivec4 h0 = mosaic_fetch(base);
+        ivec4 h1 = mosaic_fetch(base + 1);
+        int block =
             ((y % MOSAIC_SUPER) / MOSAIC_BLOCK) * MOSAIC_BLOCKS_PER_SUPER_EDGE +
             ((x % MOSAIC_SUPER) / MOSAIC_BLOCK);
-        ivec4 command = mosaic_fetch(mosaic_pointer(plane) + inSuper);
+
+        int mode = 0;
+        int commandSlot = 0;
+        int payloadOffset = 0;
+        int commands = 0;
+        for (int j = 0; j < 16; j++) {
+            ivec4 header = j < 8 ? h0 : h1;
+            int n = (header[(j & 7) >> 1] >> ((j & 1) * 4)) & 15;
+            if (j == block) {
+                mode = n;
+                commandSlot = commands;
+            }
+            if (j < block) payloadOffset += MOSAIC_PAYLOAD_TEXELS[n];
+            commands += MOSAIC_COMMAND_TEXELS[n];
+        }
+
+        int commandAt = base + MOSAIC_HEADER_TEXELS + commandSlot;
+        int payloadAt = base + MOSAIC_HEADER_TEXELS + commands + payloadOffset;
         int quarter = ((y % MOSAIC_BLOCK) / 4) * 2 + ((x % MOSAIC_BLOCK) / 4);
 
-        if (command.r == MOSAIC_BLK_SKIP) {
+        if (mode == MOSAIC_BLK_SKIP) {
             colour = mosaic_previous(size, x, y);
-        } else if (command.r == MOSAIC_BLK_MOTION) {
+        } else if (mode == MOSAIC_BLK_MOTION) {
+            ivec4 command = mosaic_fetch(commandAt);
             colour = mosaic_previous(
-                size, x + command.g - MOSAIC_MV_BIAS, y + command.b - MOSAIC_MV_BIAS);
-        } else if (command.r == MOSAIC_BLK_DELTA) {
-            ivec4 offset = mosaic_fetch(mosaic_pointer(command) + quarter);
+                size, x + command.r - MOSAIC_MV_BIAS, y + command.g - MOSAIC_MV_BIAS);
+        } else if (mode == MOSAIC_BLK_DELTA) {
+            ivec4 offset = mosaic_fetch(payloadAt + quarter);
             colour = clamp(mosaic_previous(size, x, y) + offset.rgb - MOSAIC_MV_BIAS, 0, 255);
+        } else if (mode == MOSAIC_BLK_MOTION_DELTA) {
+            ivec4 command = mosaic_fetch(commandAt);
+            ivec4 offset = mosaic_fetch(payloadAt + quarter);
+            colour = clamp(
+                mosaic_previous(
+                    size, x + command.r - MOSAIC_MV_BIAS, y + command.g - MOSAIC_MV_BIAS) +
+                    offset.rgb - MOSAIC_MV_BIAS,
+                0, 255);
+        } else if (mode == MOSAIC_BLK_INTRA) {
+            colour = mosaic_bc1(
+                mosaic_fetch(payloadAt + quarter * 2),
+                mosaic_fetch(payloadAt + quarter * 2 + 1),
+                x, y);
+        } else if (mode == MOSAIC_BLK_MOTION_RESIDUAL) {
+            ivec4 command = mosaic_fetch(commandAt);
+            ivec3 residual = mosaic_bc1(
+                mosaic_fetch(payloadAt + quarter * 2),
+                mosaic_fetch(payloadAt + quarter * 2 + 1),
+                x, y);
+            colour = clamp(
+                mosaic_previous(
+                    size, x + command.r - MOSAIC_MV_BIAS, y + command.g - MOSAIC_MV_BIAS) +
+                    residual - MOSAIC_RESIDUAL_BIAS,
+                0, 255);
+        } else if (mode == MOSAIC_BLK_ENDPOINT_REUSE) {
+            ivec4 command = mosaic_fetch(commandAt);
+            colour = mosaic_bc1(
+                mosaic_fetch(mosaic_pointer(command) + quarter * 2),
+                mosaic_fetch(payloadAt + quarter),
+                x, y);
         } else {
-            colour = mosaic_intra(command, quarter, x, y);
+            ivec4 payload = mosaic_fetch(payloadAt + quarter);
+            int codebook = int(Playback.w);
+            colour = mosaic_bc1(
+                mosaic_fetch(codebook + (payload.r | (payload.g << 8))),
+                mosaic_fetch(codebook + MOSAIC_CODEBOOK + (payload.b | (payload.a << 8))),
+                x, y);
         }
     }
 

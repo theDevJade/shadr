@@ -7,6 +7,7 @@
 package dev.shadr.pack
 
 import dev.shadr.core.video.MosaicEncoder
+import dev.shadr.core.video.MosaicFormat
 import dev.shadr.core.video.VideoBudget
 import dev.shadr.core.video.VideoClip
 import java.awt.RenderingHints
@@ -21,6 +22,7 @@ import kotlin.math.roundToInt
 class VideoImport(
     private val ffmpeg: String = "ffmpeg",
     private val ffprobe: String = "ffprobe",
+    private val report: (String) -> Unit = ::println,
 ) {
 
     data class Request(
@@ -45,40 +47,77 @@ class VideoImport(
         val issues = mutableListOf<String>()
         val geometry = geometryOf(request, issues) ?: return Result(null, issues)
 
-        val options = MosaicEncoder.Options(
-            quality = request.quality,
-            gopFrames = request.gopFrames,
-        )
-
         var height = even(minOf(geometry.height, request.maxHeight))
         var attempts = 0
         while (height >= VideoBudget.MIN_HEIGHT && attempts < MAX_ATTEMPTS) {
             val width = even((height * geometry.aspect).roundToInt()).coerceAtLeast(2)
             attempts++
 
+            report(
+                "${request.id}: encoding ${geometry.frames} frames at ${width}x$height" +
+                    if (attempts > 1) " (attempt $attempts)" else "",
+            )
+            val started = System.nanoTime()
+            var lastReport = started
+            var reached = 0
+
+            val options = MosaicEncoder.Options(
+                quality = request.quality,
+                gopFrames = request.gopFrames,
+                targetTexelsPerFrame = targetTexelsPerFrame(width, height, geometry.frames),
+                onProgress = { progress ->
+                    reached = progress.frame + 1
+                    val now = System.nanoTime()
+                    if (now - lastReport >= PROGRESS_INTERVAL_NS) {
+                        lastReport = now
+                        val elapsed = (now - started) / 1e9
+                        val left = if (progress.fraction > 0) {
+                            elapsed / progress.fraction - elapsed
+                        } else {
+                            0.0
+                        }
+                        report(
+                            "  ${request.id}: ${"%.0f".format(progress.fraction * 100)}% " +
+                                "(frame ${progress.frame + 1}/${progress.frameCount}" +
+                                (if (progress.passes > 1) ", pass ${progress.pass}" else "") +
+                                "), ${"%.0f".format(progress.fillFraction * 100)}% of a sheet, " +
+                                "${"%.0f".format(left)}s left",
+                        )
+                    }
+                },
+            )
+
             val stats = MosaicEncoder.Stats()
+            val feeds = mutableListOf<Feed>()
             val mosaic = try {
-                feed(request, geometry, width, height).use { source ->
-                    MosaicEncoder.encode(
-                        frameCount = geometry.frames,
-                        width = width,
-                        height = height,
-                        fps = request.fps,
-                        options = options,
-                        stats = stats,
-                    ) { source.next() }
+                MosaicEncoder.encode(
+                    frameCount = geometry.frames,
+                    width = width,
+                    height = height,
+                    fps = request.fps,
+                    options = options,
+                    stats = stats,
+                ) { _ ->
+                    val feed = feed(request, geometry, width, height)
+                    feeds += feed
+                    { _: Int -> feed.next() }
                 }
             } catch (e: IOException) {
                 return Result(null, issues + "${request.id}: ${e.message}")
+            } finally {
+                feeds.forEach { it.close() }
             }
 
             if (mosaic != null) {
                 if (height < geometry.height) {
                     issues += "${request.id}: scaled to ${width}x$height to fit the sheet"
                 }
+                val seconds = mosaic.frameCount / request.fps
+                val fill = stats.fillFraction.coerceAtLeast(1e-9)
                 issues += "${request.id}: ${mosaic.frameCount} frames, " +
-                    "${mosaic.bytes / 1024} KiB, ${mosaic.compression.roundToInt()}x smaller " +
-                    "than raw ($stats)"
+                    "${mosaic.bytes / 1024} KiB, " +
+                    "${"%.0f".format(fill * 100)}% of a sheet " +
+                    "(${"%.1f".format(seconds / fill)}s per sheet) ($stats)"
                 stats.report?.let { issues += "${request.id}: $it" }
 
                 val audio = if (request.source.isDirectory) {
@@ -104,7 +143,17 @@ class VideoImport(
                     issues,
                 )
             }
-            height = even((height * STEP_DOWN).roundToInt())
+
+            val shrink = if (reached in 1 until geometry.frames) {
+                kotlin.math.sqrt(reached.toDouble() / geometry.frames) * FIT_MARGIN
+            } else {
+                STEP_DOWN
+            }
+            report(
+                "${request.id}: ${width}x$height fills the sheet by frame $reached " +
+                    "of ${geometry.frames}, retrying smaller",
+            )
+            height = even((height * shrink.coerceAtMost(STEP_DOWN)).roundToInt())
         }
 
         return Result(null, issues + tooLarge(request, geometry.frames))
@@ -112,6 +161,14 @@ class VideoImport(
 
     private class Geometry(val width: Int, val height: Int, val frames: Int) {
         val aspect: Double get() = width.toDouble() / height
+    }
+
+    private fun targetTexelsPerFrame(width: Int, height: Int, frames: Int): Int {
+        val plane = MosaicFormat.superblocksPerFrame(width, height).toLong() * frames
+        val budget = MosaicFormat.MAX_TEXELS.toLong() * FILL_TARGET_PERCENT / 100 -
+            plane - MosaicFormat.CODEBOOK_TEXELS
+        if (budget <= 0) return 0
+        return (budget / frames).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
     }
 
     private fun geometryOf(request: Request, issues: MutableList<String>): Geometry? {
@@ -339,7 +396,13 @@ class VideoImport(
 
         private const val STEP_DOWN = 0.8
 
+        private const val FIT_MARGIN = 0.92
+
+        private const val PROGRESS_INTERVAL_NS = 5_000_000_000L
+
         private const val MAX_ATTEMPTS = 8
+
+        private const val FILL_TARGET_PERCENT = 96L
 
         private val VORBIS_ENCODERS = listOf(
             listOf("-c:a", "libvorbis", "-q:a", "4"),
@@ -382,9 +445,10 @@ class VideoImport(
 class VideoLibrary @JvmOverloads constructor(
     private val contentsDir: File,
     private val importer: VideoImport = VideoImport(),
-    private val fps: Double = 30.0,
+    private val fps: Double = 20.0,
     private val maxSeconds: Double = VideoImport.WHOLE_SOURCE,
     private val quality: Int = MosaicEncoder.Options().quality,
+    private val maxHeight: Int = VideoBudget.MAX_HEIGHT,
 ) {
     data class Result(val sources: List<VideoAssets.Source>, val issues: List<String>)
 
@@ -407,6 +471,7 @@ class VideoLibrary @JvmOverloads constructor(
                     source = entry,
                     fps = fps,
                     maxSeconds = maxSeconds,
+                    maxHeight = maxHeight,
                     quality = quality,
                 ),
             )

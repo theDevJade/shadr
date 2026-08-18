@@ -248,6 +248,7 @@ class PackGenerator(
                 dataHeight = VideoAssets.dataRows(source.mosaic),
                 superColumns = source.mosaic.superColumns,
                 superblocksPerFrame = source.mosaic.superblocksPerFrame,
+                codebookBase = source.mosaic.codebookBase,
             ),
         ) ?: return
 

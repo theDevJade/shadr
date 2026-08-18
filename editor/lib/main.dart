@@ -11,6 +11,7 @@ import 'protocol.dart';
 import 'shaders.dart';
 import 'theme.dart';
 import 'timeline.dart';
+import 'videos.dart';
 
 void main() => runApp(const ShadrEditorApp());
 
@@ -131,6 +132,7 @@ class _EditorShellState extends State<EditorShell> {
                   child: switch (_model.workspace) {
                     Workspace.shaders => const ShaderWorkspace(),
                     Workspace.images => const ImagesWorkspace(),
+                    Workspace.videos => const VideosWorkspace(),
                     Workspace.ui => _uiWorkspace(),
                   },
                 ),
@@ -256,6 +258,11 @@ class _ModeRail extends StatelessWidget {
           icon: Icon(Icons.image_outlined, size: 18),
           selectedIcon: Icon(Icons.image, size: 18),
           label: Text('Images'),
+        ),
+        NavigationRailDestination(
+          icon: Icon(Icons.movie_outlined, size: 18),
+          selectedIcon: Icon(Icons.movie, size: 18),
+          label: Text('Videos'),
         ),
       ],
     );

@@ -53,6 +53,7 @@ object PostChainBuilder {
         val dataHeight: Int,
         val superColumns: Int,
         val superblocksPerFrame: Int,
+        val codebookBase: Int = 0,
     )
 
     private val json = Json { prettyPrint = true; prettyPrintIndent = "  " }
@@ -132,7 +133,7 @@ object PostChainBuilder {
             "ShadrVideoConfig",
             buildJsonArray {
                 add(vec4(video.width, video.height, video.superColumns, video.superblocksPerFrame))
-                add(vec4(video.frameCount, video.fps, video.startSeconds, 0.0))
+                add(vec4(video.frameCount, video.fps, video.startSeconds, video.codebookBase))
             },
         )
     }

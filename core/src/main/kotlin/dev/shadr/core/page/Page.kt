@@ -69,6 +69,13 @@ enum class ElementType(val id: String, val defaultGlyph: Char = Glyphs.BACKGROUN
 
     GRID("grid_block");
 
+    val sourceKey: String
+        get() = when (this) {
+            SHADER -> "shader"
+            VIDEO -> "video"
+            else -> "item"
+        }
+
     val supportsRounding: Boolean
         get() = this == BLOCK || this == BLOCK_ROUNDED || this == BLOCK_SDF
 

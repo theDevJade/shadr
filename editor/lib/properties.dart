@@ -328,6 +328,28 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
           ),
         ],
       ),
+      if (_sourceLabel(element.type) != null)
+        Section(
+          title: _sourceLabel(element.type)!,
+          children: [
+            PropertyRow(
+              label: _sourceRowLabel(element.type),
+              child: SuggestField(
+                value: element.item ?? '',
+                enabled: editable,
+                options: _sourceOptions(model, element.type),
+                hint: _sourceHint(element.type),
+                emptyHint: _sourceEmptyHint(element.type),
+                onCommit: (v) => set(element.type == 'SHADER'
+                    ? 'shader'
+                    : element.type == 'VIDEO'
+                        ? 'video'
+                        : 'item', v),
+              ),
+            ),
+            if (element.type == 'VIDEO') _MissingClipHint(model: model, name: element.item),
+          ],
+        ),
       if (element.isText)
         Section(
           title: 'Text',
@@ -517,6 +539,9 @@ class _AddSection extends StatelessWidget {
     (id: 'blur', icon: Icons.blur_on, label: 'Blur'),
     (id: 'text', icon: Icons.text_fields, label: 'Text'),
     (id: 'hitbox', icon: Icons.crop_free, label: 'Hitbox'),
+    (id: 'shader', icon: Icons.bolt, label: 'Shader'),
+    (id: 'video', icon: Icons.movie, label: 'Video'),
+    (id: 'item', icon: Icons.category_outlined, label: 'Item'),
   ];
 
   @override
@@ -548,6 +573,63 @@ class _AddSection extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+String? _sourceLabel(String type) => switch (type) {
+      'SHADER' => 'Shader',
+      'VIDEO' => 'Video',
+      'ITEM' => 'Item',
+      _ => null,
+    };
+
+String _sourceRowLabel(String type) => switch (type) {
+      'SHADER' => 'Program',
+      'VIDEO' => 'Clip',
+      _ => 'Id',
+    };
+
+String _sourceHint(String type) => switch (type) {
+      'SHADER' => 'shader id',
+      'VIDEO' => 'clip name',
+      _ => 'minecraft:stone',
+    };
+
+String _sourceEmptyHint(String type) => switch (type) {
+      'SHADER' => 'No shaders installed. Add one under shaders/items.',
+      'VIDEO' => 'No clips found. Upload one in the Videos workspace.',
+      _ => 'Type any item id.',
+    };
+
+List<SuggestOption> _sourceOptions(EditorModel model, String type) => switch (type) {
+      'SHADER' => [
+          for (final shader in model.catalog.shaders)
+            (value: shader.id, label: shader.id, detail: shader.description),
+        ],
+      'VIDEO' => [
+          for (final video in model.videos)
+            (value: video.name, label: video.name, detail: video.summary),
+        ],
+      _ => const [],
+    };
+
+class _MissingClipHint extends StatelessWidget {
+  const _MissingClipHint({required this.model, required this.name});
+
+  final EditorModel model;
+  final String? name;
+
+  @override
+  Widget build(BuildContext context) {
+    final clip = name?.trim() ?? '';
+    if (clip.isEmpty) {
+      return const _Hint('Pick a clip, or the panel renders as a missing-texture square.');
+    }
+    if (model.videos.any((v) => v.name == clip)) return const SizedBox.shrink();
+    return _Hint(
+      "No clip named '$clip' in contents/videos. The pack has nothing to draw, "
+      'so this panel renders as a missing-texture square.',
     );
   }
 }

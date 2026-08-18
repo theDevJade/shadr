@@ -30,6 +30,7 @@ object EditorLauncher {
             dev.shadr.core.shader.EnvironmentSource(File(dataFolder, "shaders")),
         onShadersChanged: () -> Boolean = { false },
         images: ImageSource? = null,
+        videos: VideoSource? = null,
         log: (String) -> Unit = {},
     ): EditorServer? {
         if (!config.enabled) return null
@@ -54,6 +55,7 @@ object EditorLauncher {
             environmentSource = environmentSource,
             onShadersChanged = onShadersChanged,
             images = images,
+            videos = videos,
             bindAddress = config.bind,
             auth = auth,
             webRoot = resolveUiDir(config, dataFolder),

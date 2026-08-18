@@ -21,9 +21,10 @@ fun main(args: Array<String>) {
 
     val videos = VideoLibrary(
         contentsDir = contentsDir,
-        fps = flag("video-fps", 30.0),
+        fps = flag("video-fps", 20.0),
         maxSeconds = flag("video-seconds", dev.shadr.pack.VideoImport.WHOLE_SOURCE),
         quality = flag("video-quality", 24.0).toInt(),
+        maxHeight = flag("video-height", dev.shadr.core.video.VideoBudget.MAX_HEIGHT.toDouble()).toInt(),
     ).load()
     videos.issues.forEach { println("  video: $it") }
 

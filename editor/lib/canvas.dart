@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
-import 'package:flutter/foundation.dart' show setEquals;
+import 'package:flutter/foundation.dart' show mapEquals, setEquals;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Element;
 import 'package:flutter/services.dart';
@@ -22,6 +24,9 @@ class PageCanvas extends StatefulWidget {
 
 class _PageCanvasState extends State<PageCanvas> {
   Offset? _pressed;
+
+  final Map<String, ui.Image> _thumbnails = {};
+  final Set<String> _decoding = {};
 
   ResizeHandle? _hoveredHandle;
   String? _hoveredId;
@@ -149,11 +154,50 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
+  void _syncThumbnails(EditorModel model) {
+    for (final video in model.videos) {
+      if (!video.hasThumbnail) continue;
+      final key = _thumbnailKey(video);
+      if (_thumbnails.containsKey(key) || _decoding.contains(key)) continue;
+      _decoding.add(key);
+      _decode(key, video.thumbnail);
+    }
+  }
+
+  static String _thumbnailKey(VideoEntry video) => '${video.name}:${video.thumbnail.length}';
+
+  Future<void> _decode(String key, String data) async {
+    try {
+      final codec = await ui.instantiateImageCodec(base64Decode(data));
+      final frame = await codec.getNextFrame();
+      if (!mounted) return;
+      setState(() {
+        _thumbnails
+          ..removeWhere((existing, _) => existing.split(':').first == key.split(':').first)
+          ..[key] = frame.image;
+      });
+    } catch (_) {
+      if (mounted) setState(() {});
+    } finally {
+      _decoding.remove(key);
+    }
+  }
+
+  Map<String, ui.Image> _thumbnailsByClip(EditorModel model) {
+    final byClip = <String, ui.Image>{};
+    for (final video in model.videos) {
+      final image = _thumbnails[_thumbnailKey(video)];
+      if (image != null) byClip[video.name] = image;
+    }
+    return byClip;
+  }
+
   @override
   Widget build(BuildContext context) {
     final model = EditorScope.of(context);
     final snapshot = model.snapshot;
     if (snapshot == null) return const SizedBox.expand();
+    _syncThumbnails(model);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -207,6 +251,7 @@ class _PageCanvasState extends State<PageCanvas> {
                       handlesOn: _resizable?.id,
                       hoveredId: _hoveredId,
                       marquee: _marquee,
+                      thumbnails: _thumbnailsByClip(model),
                     ),
                     size: Size.infinite,
                   ),
@@ -230,6 +275,7 @@ class _PagePainter extends CustomPainter {
     required this.handlesOn,
     required this.hoveredId,
     required this.marquee,
+    required this.thumbnails,
   });
 
   final PageSnapshot snapshot;
@@ -240,6 +286,8 @@ class _PagePainter extends CustomPainter {
   final String? handlesOn;
   final String? hoveredId;
   final Rect? marquee;
+
+  final Map<String, ui.Image> thumbnails;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -355,6 +403,25 @@ class _PagePainter extends CustomPainter {
       case 'PROGRESS':
         final radius = math.min(rect.width, rect.height) / 2;
         canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)), paint);
+      case 'VIDEO':
+        final image = thumbnails[element.item ?? ''];
+        if (image == null) {
+          canvas.drawRect(rect, Paint()..color = tokens.surfaceSunken);
+          canvas.drawRect(
+            rect,
+            Paint()
+              ..color = tokens.border
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1 / viewport.scale,
+          );
+        } else {
+          canvas.drawImageRect(
+            image,
+            Offset.zero & Size(image.width.toDouble(), image.height.toDouble()),
+            rect,
+            Paint()..color = Colors.white.withValues(alpha: color.a),
+          );
+        }
       case 'BLUR':
         final blurRadius = element.rounding?.resolvedRadius(rect.width, rect.height) ?? 0;
         final rounded = RRect.fromRectAndRadius(rect, Radius.circular(blurRadius));
@@ -475,5 +542,6 @@ class _PagePainter extends CustomPainter {
       old.viewport != viewport ||
       old.handlesOn != handlesOn ||
       old.hoveredId != hoveredId ||
-      old.marquee != marquee;
+      old.marquee != marquee ||
+      !mapEquals(old.thumbnails, thumbnails);
 }

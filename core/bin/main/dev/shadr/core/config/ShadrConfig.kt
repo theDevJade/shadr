@@ -65,6 +65,7 @@ data class ShadrConfig(
                 hudScaleDivisor = node.number(
                     "rendering.hud-scale-divisor", "editor.rendering.hud-scale-divisor", fallback = 1000.0,
                 ),
+                packetEntities = node.bool("rendering.packet-entities", fallback = true),
             ),
             editor = EditorConfig(
                 placeholderRefreshTicks = node.int("editor.placeholders.text-refresh", fallback = 20),
@@ -152,6 +153,7 @@ data class RenderingConfig(
     val fixShadersForwardOffset: Double = 0.3781,
     val fixShadersLayerGap: Double = HudPositionCalculator.DEFAULT_FIX_SHADERS_LAYER_GAP,
     val hudScaleDivisor: Double = 1000.0,
+    val packetEntities: Boolean = true,
 )
 
 data class EditorConfig(

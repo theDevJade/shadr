@@ -76,7 +76,7 @@ enum ResizeHandle {
   };
 }
 
-enum Workspace { ui, shaders, images }
+enum Workspace { ui, shaders, images, videos }
 
 class EditorModel extends ChangeNotifier {
   EditorModel({required this.endpoint, EditorTransport Function()? connect})
@@ -118,6 +118,9 @@ class EditorModel extends ChangeNotifier {
   List<ImageEntry> _images = const [];
   List<ImageEntry> get images => _images;
 
+  List<VideoEntry> _videos = const [];
+  List<VideoEntry> get videos => _videos;
+
   List<EffectEntry> _effects = const [];
   List<EffectEntry> get effects => _effects;
 
@@ -144,6 +147,32 @@ class EditorModel extends ChangeNotifier {
   }
 
   ImageEntry? _pendingImage;
+
+  String? _pendingVideo;
+
+  void uploadVideo(String name, String extension, String base64Data) =>
+      _send(wire.uploadVideo(name, extension, base64Data));
+
+  void removeVideo(String name) => _send(wire.deleteVideo(name));
+
+  void insertVideo(VideoEntry entry) {
+    final screen = _snapshot?.screen;
+    final centre = screen == null
+        ? const Offset(860, 500)
+        : _viewport.toDesign(viewportSize.center(Offset.zero));
+    final width = entry.width == 0 ? 640.0 : entry.width.toDouble();
+    final height = entry.height == 0 ? 360.0 : entry.height.toDouble();
+    _send(
+      wire.addElement(
+        'video',
+        centre.dx.roundToDouble() - width / 2,
+        centre.dy.roundToDouble() - height / 2,
+        width: width,
+        height: height,
+      ),
+    );
+    _pendingVideo = entry.name;
+  }
 
   ShaderCatalog _catalog = ShaderCatalog.empty;
   ShaderCatalog get catalog => _catalog;
@@ -349,6 +378,14 @@ class EditorModel extends ChangeNotifier {
             }));
           }
         }
+        final pendingVideo = _pendingVideo;
+        if (pendingVideo != null) {
+          _pendingVideo = null;
+          final added = next.elements.where((e) => e.type == 'VIDEO').lastOrNull;
+          if (added != null) {
+            _send(wire.patchElement(added.id, {'video': pendingVideo}));
+          }
+        }
         final changedDocument = _snapshot?.name != next.name;
         _snapshot = next;
         if (changedDocument) {
@@ -364,6 +401,11 @@ class EditorModel extends ChangeNotifier {
       case 'images':
         _images = ((json['images'] as List<dynamic>?) ?? const [])
             .map((e) => ImageEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+        notifyListeners();
+      case 'videos':
+        _videos = ((json['videos'] as List<dynamic>?) ?? const [])
+            .map((e) => VideoEntry.fromJson(e as Map<String, dynamic>))
             .toList();
         notifyListeners();
       case 'effects':

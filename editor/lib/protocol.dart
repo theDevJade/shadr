@@ -168,6 +168,7 @@ class Element {
     this.rounding,
     this.outline,
     this.componentName,
+    this.item,
     this.sourcePath = '',
     this.interaction = const Interaction(),
   });
@@ -189,6 +190,8 @@ class Element {
   final Rounding? rounding;
   final Outline? outline;
   final String? componentName;
+
+  final String? item;
 
   final String sourcePath;
 
@@ -235,6 +238,7 @@ class Element {
         rounding: Rounding.fromJson(json['rounding'] as Map<String, dynamic>?),
         outline: Outline.fromJson(json['outline'] as Map<String, dynamic>?),
         componentName: json['componentName'] as String?,
+        item: json['item'] as String?,
         sourcePath: (json['sourcePath'] as String?) ?? '',
         interaction: Interaction.fromJson(json['interaction'] as Map<String, dynamic>?),
       );
@@ -601,6 +605,41 @@ class ImageEntry {
       );
 }
 
+class VideoEntry {
+  const VideoEntry({
+    required this.name,
+    this.width = 0,
+    this.height = 0,
+    this.seconds = 0,
+    this.thumbnail = '',
+    this.issue,
+  });
+
+  final String name;
+  final int width;
+  final int height;
+  final double seconds;
+  final String thumbnail;
+  final String? issue;
+
+  bool get hasThumbnail => thumbnail.isNotEmpty;
+
+  String get summary {
+    if (issue != null) return issue!;
+    if (width == 0 || height == 0) return 'unreadable';
+    return '${width}x$height, ${seconds.toStringAsFixed(1)}s';
+  }
+
+  static VideoEntry fromJson(Map<String, dynamic> json) => VideoEntry(
+        name: json['name'] as String,
+        width: (json['width'] as num?)?.toInt() ?? 0,
+        height: (json['height'] as num?)?.toInt() ?? 0,
+        seconds: (json['seconds'] as num?)?.toDouble() ?? 0,
+        thumbnail: (json['thumbnail'] as String?) ?? '',
+        issue: json['issue'] as String?,
+      );
+}
+
 class EffectEntry {
   const EffectEntry({
     required this.id,
@@ -663,6 +702,12 @@ String uploadImage(String name, String base64Data) =>
     jsonEncode({'t': 'uploadImage', 'name': name, 'data': base64Data});
 
 String deleteImage(String name) => jsonEncode({'t': 'deleteImage', 'name': name});
+
+String uploadVideo(String name, String extension, String base64Data) => jsonEncode(
+      {'t': 'uploadVideo', 'name': name, 'extension': extension, 'data': base64Data},
+    );
+
+String deleteVideo(String name) => jsonEncode({'t': 'deleteVideo', 'name': name});
 
 String openProgram(String path) => jsonEncode({'t': 'openProgram', 'path': path});
 

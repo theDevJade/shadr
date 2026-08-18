@@ -145,6 +145,11 @@ public final class Server {
         registerCommands();
         startEditor();
 
+        System.out.println("[shadr] baking video sources...");
+        final long bakedAt = System.nanoTime();
+        videoSources();
+        System.out.printf("[shadr] video ready in %.1fs%n", (System.nanoTime() - bakedAt) / 1e9);
+
         server.start("0.0.0.0", MC_PORT);
         final java.util.concurrent.atomic.AtomicLong audioTick =
                 new java.util.concurrent.atomic.AtomicLong();
@@ -161,7 +166,7 @@ public final class Server {
 
     private static java.util.List<dev.shadr.core.video.VideoAudio.Track> audioTracks() {
         return dev.shadr.core.video.VideoAudio.INSTANCE.tracksOf(demoPage, id -> {
-            for (dev.shadr.pack.VideoAssets.Source source : videoSources()) {
+            for (dev.shadr.pack.VideoAssets.Source source : VIDEO_CACHE) {
                 if (source.getClip().getId().equals(id) && source.getAudio() != null) {
                     return source.getClip();
                 }
@@ -341,6 +346,7 @@ public final class Server {
                 new dev.shadr.pack.AtlasImageSource(
                         REPO_ROOT.resolve("assets/shadr/contents").toFile(),
                         () -> lastAtlas),
+                new dev.shadr.pack.LibraryVideoSource(REPO_ROOT.resolve("contents").toFile()),
                 line -> {
                     System.out.println("[shadr] " + line);
                     return kotlin.Unit.INSTANCE;
@@ -488,9 +494,13 @@ public final class Server {
             return VIDEO_CACHE;
         }
 
+        final dev.shadr.pack.VideoImport importer = new dev.shadr.pack.VideoImport(
+                "ffmpeg", "ffprobe", line -> {
+                    System.out.println("[shadr] " + line);
+                    return kotlin.Unit.INSTANCE;
+                });
         final dev.shadr.pack.VideoLibrary.Result result =
-                new dev.shadr.pack.VideoLibrary(contents, new dev.shadr.pack.VideoImport(), 30.0, 3.0)
-                        .load();
+                new dev.shadr.pack.VideoLibrary(contents, importer, 30.0, 3.0).load();
         for (String issue : result.getIssues()) {
             System.out.println("[shadr] video: " + issue);
         }

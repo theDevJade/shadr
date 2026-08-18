@@ -17,6 +17,7 @@ class EditorServer(
     private val environmentSource: dev.shadr.core.shader.EnvironmentSource? = null,
     private val onShadersChanged: () -> Boolean = { false },
     private val images: ImageSource? = null,
+    private val videos: VideoSource? = null,
     private val bindAddress: String = "0.0.0.0",
     private val auth: EditorAuth = EditorAuth.Token(EditorAuth.generateToken()),
     webRoot: java.io.File? = null,
@@ -39,6 +40,7 @@ class EditorServer(
             connection.send(encode(Welcome(documents = documents.list())))
             shaderList()?.let { connection.send(encode(it)) }
             images?.let { connection.send(encode(ImageList(it.list()))) }
+            videos?.let { connection.send(encode(VideoList(it.list()))) }
             documents.effects().takeIf { it.isNotEmpty() }
                 ?.let { connection.send(encode(EffectList(it))) }
         },
@@ -286,6 +288,42 @@ class EditorServer(
                 } else {
                     val rebuilt = onShadersChanged()
                     socket.broadcast(encode(ImageList(source.list())))
+                    connection.send(encode(ShaderSaved(message.name, packRebuilt = rebuilt)))
+                }
+            }
+            is UploadVideo -> {
+                val source = videos
+                if (source == null) {
+                    connection.send(encode(EditorError("video uploads are not enabled on this server")))
+                } else {
+                    val refusal = VideoSource.validateName(message.name)
+                        ?: VideoSource.validateExtension(message.extension)
+                    val bytes = runCatching {
+                        java.util.Base64.getDecoder().decode(message.data)
+                    }.getOrNull()
+                    when {
+                        refusal != null -> connection.send(encode(EditorError(refusal)))
+                        bytes == null -> connection.send(encode(EditorError("that upload was not valid base64")))
+                        else -> {
+                            val failure = source.write(message.name, message.extension, bytes)
+                            if (failure != null) {
+                                connection.send(encode(EditorError(failure)))
+                            } else {
+                                val rebuilt = onShadersChanged()
+                                socket.broadcast(encode(VideoList(source.list())))
+                                connection.send(encode(ShaderSaved(message.name, packRebuilt = rebuilt)))
+                            }
+                        }
+                    }
+                }
+            }
+            is DeleteVideo -> {
+                val source = videos
+                if (source == null || !source.delete(message.name)) {
+                    connection.send(encode(EditorError("no such video: ${message.name}")))
+                } else {
+                    val rebuilt = onShadersChanged()
+                    socket.broadcast(encode(VideoList(source.list())))
                     connection.send(encode(ShaderSaved(message.name, packRebuilt = rebuilt)))
                 }
             }

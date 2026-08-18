@@ -209,15 +209,45 @@ class MosaicCodecTest {
         assertEquals(MosaicFormat.BLK_MOTION, define("MOSAIC_BLK_MOTION"))
         assertEquals(MosaicFormat.BLK_DELTA, define("MOSAIC_BLK_DELTA"))
         assertEquals(MosaicFormat.BLK_INTRA, define("MOSAIC_BLK_INTRA"))
+        assertEquals(MosaicFormat.BLK_MOTION_DELTA, define("MOSAIC_BLK_MOTION_DELTA"))
+        assertEquals(MosaicFormat.BLK_MOTION_RESIDUAL, define("MOSAIC_BLK_MOTION_RESIDUAL"))
+        assertEquals(MosaicFormat.BLK_ENDPOINT_REUSE, define("MOSAIC_BLK_ENDPOINT_REUSE"))
+        assertEquals(MosaicFormat.BLK_INTRA_VQ, define("MOSAIC_BLK_INTRA_VQ"))
         assertEquals(MosaicFormat.MV_BIAS, define("MOSAIC_MV_BIAS"))
+        assertEquals(MosaicFormat.RESIDUAL_BIAS, define("MOSAIC_RESIDUAL_BIAS"))
+        assertEquals(MosaicFormat.HEADER_TEXELS, define("MOSAIC_HEADER_TEXELS"))
+        assertEquals(MosaicFormat.CODEBOOK, define("MOSAIC_CODEBOOK"))
 
-        for (mode in listOf("MOSAIC_BLK_SKIP", "MOSAIC_BLK_MOTION", "MOSAIC_BLK_DELTA")) {
+        fun table(name: String): List<Int>? =
+            Regex("""$name\[8\] = int\[8\]\(([^)]*)\)""").find(source)
+                ?.groupValues?.get(1)?.split(",")?.map { it.trim().toInt() }
+
+        val payload = assertNotNull(table("MOSAIC_PAYLOAD_TEXELS"), "no payload size table")
+        val commands = assertNotNull(table("MOSAIC_COMMAND_TEXELS"), "no command size table")
+        for (mode in 0 until MosaicFormat.MODES) {
+            assertEquals(
+                MosaicFormat.payloadTexels(mode), payload[mode],
+                "payload texels for mode $mode disagree with the format",
+            )
+            assertEquals(
+                MosaicFormat.commandTexels(mode), commands[mode],
+                "command texels for mode $mode disagree with the format",
+            )
+        }
+
+        for (
+            mode in listOf(
+                "MOSAIC_BLK_SKIP", "MOSAIC_BLK_MOTION", "MOSAIC_BLK_DELTA",
+                "MOSAIC_BLK_MOTION_DELTA", "MOSAIC_BLK_INTRA",
+                "MOSAIC_BLK_MOTION_RESIDUAL", "MOSAIC_BLK_ENDPOINT_REUSE",
+            )
+        ) {
             assertTrue(
-                source.contains("command.r == $mode"),
+                source.contains("mode == $mode"),
                 "the shader has no branch for $mode",
             )
         }
-        assertTrue(source.contains("mosaic_intra("), "the shader never decodes an intra block")
+        assertTrue(source.contains("mosaic_bc1("), "the shader never decodes a bc1 quarter")
         assertTrue(
             source.contains("plane.r == MOSAIC_SB_MOTION"),
             "the shader has no branch for a superblock that moved as a whole",
@@ -235,6 +265,7 @@ class MosaicCodecTest {
     @Test
     fun `every block of a coded superblock is addressable`() {
         val clip = encode((0 until 4).map { scene(it * 7, it, 150) })
+        val planeEnd = clip.frameCount * clip.superblocksPerFrame
         for (frame in 0 until clip.frameCount) {
             for (sb in 0 until clip.superblocksPerFrame) {
                 val texel = clip.data[frame * clip.superblocksPerFrame + sb]
@@ -242,14 +273,137 @@ class MosaicCodecTest {
                 if (mode == MosaicFormat.SB_SKIP || mode == MosaicFormat.SB_MOTION) continue
                 val at = MosaicFormat.pointer(texel)
                 assertTrue(
-                    at >= clip.frameCount * clip.superblocksPerFrame,
+                    at >= planeEnd,
                     "superblock $sb of frame $frame points into the plane region",
                 )
                 assertTrue(
-                    at + MosaicFormat.BLOCKS_PER_SUPER <= clip.texelCount,
-                    "superblock $sb of frame $frame points past the end of the sheet",
+                    at + MosaicFormat.HEADER_TEXELS <= clip.texelCount,
+                    "superblock $sb of frame $frame has no room for its header",
+                )
+
+                var commands = 0
+                var payload = 0
+                for (block in 0 until MosaicFormat.BLOCKS_PER_SUPER) {
+                    val header = clip.data[at + if (block < 8) 0 else 1]
+                    val blockMode = MosaicFormat.nibble(header, block)
+                    assertTrue(
+                        blockMode < MosaicFormat.MODES,
+                        "block $block of superblock $sb carries mode $blockMode",
+                    )
+                    commands += MosaicFormat.commandTexels(blockMode)
+                    payload += MosaicFormat.payloadTexels(blockMode)
+                }
+                assertTrue(
+                    at + MosaicFormat.HEADER_TEXELS + commands + payload <= clip.texelCount,
+                    "superblock $sb of frame $frame runs past the end of the sheet",
                 )
             }
         }
+    }
+
+    @Test
+    fun `the encoder reconstruction matches the reference decoder bit for bit`() {
+        val frames = (0 until 12).map { scene(it * 2, it, 90 + it * 4) }
+        val stats = MosaicEncoder.Stats().apply { keepFrames = true }
+        val clip = encode(frames, MosaicEncoder.Options(gopFrames = 6), stats)
+        val decoded = MosaicReferenceDecoder.decode(clip)
+
+        assertEquals(stats.reconstructed.size, decoded.size)
+        for (f in decoded.indices) {
+            assertTrue(
+                stats.reconstructed[f].contentEquals(decoded[f]),
+                "the encoder and the decoder disagree about frame $f",
+            )
+        }
+    }
+
+    @Test
+    fun `a moving fade rides motion plus delta rather than intra`() {
+        val stats = MosaicEncoder.Stats()
+        val frames = (0 until 8).map { scene(it * 5, 0, 40 + it * 24) }
+        encode(frames, MosaicEncoder.Options(gopFrames = 1000), stats)
+
+        assertTrue(
+            stats.motionDelta > 0,
+            "a pan with a brightness ramp used no motion plus delta blocks: $stats",
+        )
+    }
+
+    @Test
+    fun `a contrast change over texture is carried by a residual`() {
+        fun noise(x: Int, y: Int): Int =
+            ((x * 73856093) xor (y * 19349663)).ushr(8) and 0xFF
+
+        val base = IntArray(width * height)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                base[y * width + x] = rgb(noise(x, y), noise(x + 311, y), noise(x, y + 191))
+            }
+        }
+        val faded = IntArray(base.size) { i ->
+            val c = base[i]
+            rgb(
+                (((c ushr 16) and 0xFF) * 85) / 100,
+                (((c ushr 8) and 0xFF) * 85) / 100,
+                ((c and 0xFF) * 85) / 100,
+            )
+        }
+
+        val stats = MosaicEncoder.Stats()
+        encode(listOf(base, faded), MosaicEncoder.Options(gopFrames = 1000), stats)
+
+        assertTrue(
+            stats.motionResidual > 0,
+            "a structured contrast change used no residual blocks: $stats",
+        )
+    }
+
+    @Test
+    fun `flat rows of a keyframe reuse their neighbour's endpoints`() {
+        val gradient = IntArray(width * height)
+        for (y in 0 until height) {
+            for (x in 0 until width) {
+                gradient[y * width + x] = rgb(y * 2, 255 - y * 2, 128)
+            }
+        }
+
+        val stats = MosaicEncoder.Stats()
+        encode(listOf(gradient), stats = stats)
+
+        assertTrue(
+            stats.endpointReuse > 0,
+            "a keyframe of identical columns reused no endpoints: $stats",
+        )
+    }
+
+    @Test
+    fun `a long clip settles into the codebook and stays decodable`() {
+        val frames = (0 until 3).map { scene(it * 3, it, 80 + it * 9) }
+        val stats = MosaicEncoder.Stats().apply { keepFrames = true }
+        val clip = encode(
+            frames,
+            MosaicEncoder.Options(gopFrames = 1, codebook = true, codebookThreshold = 1),
+            stats,
+        )
+
+        assertTrue(stats.intraVq > 0, "no block chose the codebook: $stats")
+        assertEquals(
+            clip.frameCount * clip.superblocksPerFrame, clip.codebookBase,
+            "the codebook does not sit directly after the plane",
+        )
+        assertTrue(
+            clip.codebookBase + MosaicFormat.CODEBOOK_TEXELS <= clip.texelCount,
+            "the codebook runs past the end of the sheet",
+        )
+
+        val decoded = MosaicReferenceDecoder.decode(clip)
+        for (f in decoded.indices) {
+            assertTrue(
+                stats.reconstructed[f].contentEquals(decoded[f]),
+                "the codebook path diverges between encoder and decoder at frame $f",
+            )
+        }
+        val quality = psnr(frames, decoded)
+        assertTrue(quality > 25.0, "the codebook path decodes at ${quality.roundToInt()} dB")
     }
 }
