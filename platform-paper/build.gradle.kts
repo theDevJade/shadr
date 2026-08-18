@@ -23,7 +23,7 @@ tasks.jar {
     from(rootProject.file("LICENSE")) { into("META-INF") }
     from(rootProject.file("NOTICE")) { into("META-INF") }
 
-    inputs.file(nmsBundle).optional(true).withPathSensitivity(PathSensitivity.NAME_ONLY)
+    inputs.files(nmsBundle).withPropertyName("nmsBundle").withPathSensitivity(PathSensitivity.NAME_ONLY)
     from(provider { if (nmsBundle.isFile) zipTree(nmsBundle) else emptyList<Any>() })
 
     from(configurations.runtimeClasspath.map { classpath ->

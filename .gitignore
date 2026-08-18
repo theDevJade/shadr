@@ -13,6 +13,7 @@ local.properties
 .idea/
 *.iml
 .vscode/
+bin/
 
 # generated packs / scratch
 /out/
