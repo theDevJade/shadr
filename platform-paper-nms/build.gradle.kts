@@ -13,7 +13,7 @@ val backends = mapOf(
     "v26_2" to Backend("26.2.build.112-stable", 25),
 )
 
-val paperApi = "io.papermc.paper:paper-api:1.21.8-R0.1-SNAPSHOT"
+val paperApi = "io.papermc.paper:paper-api:26.2.build.112-stable"
 val sharedPackage = "dev.shadr.paper.nms.impl"
 
 allprojects {
