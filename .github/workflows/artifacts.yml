@@ -51,6 +51,9 @@ jobs:
         env:
           JAVA_HOME: ${{ env.JAVA_HOME_25_X64 }}
 
+      - name: Install glslangValidator
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+
       - name: Build
         run: ./gradlew ${{ env.GRADLE_TASK }} --no-daemon
         env:
@@ -173,7 +176,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build the jars the integrations compile against
-        run: ./gradlew :core:jar :platform-paper:jar --no-daemon
+        run: ./gradlew :core:jar :platform-paper:jar --no-daemon -PallowMissingNms
 
       - name: Skript
         run: ./gradlew ${{ env.GRADLE_TASK }} --no-daemon

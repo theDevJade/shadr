@@ -91,7 +91,7 @@ class PacketWorldDisplays(
                 val spec = wanted.getValue(local)
                 val id = backend.nextEntityId(player)
                 backend.spawn(player, id, FakeEntityKind.ITEM_DISPLAY, locationOf(spec))
-                backend.metadata(player, id, Displays.metaFor(spec))
+                backend.metadata(player, id, Displays.metaFor(spec, backend.slots()))
                 visible[local] = id
             }
         }

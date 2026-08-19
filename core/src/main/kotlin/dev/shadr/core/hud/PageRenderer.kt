@@ -11,6 +11,9 @@ import dev.shadr.core.Vec3
 import dev.shadr.core.page.Element
 import dev.shadr.core.page.ElementType
 import dev.shadr.core.page.Page
+import dev.shadr.core.page.Slider
+import dev.shadr.core.page.TextInput
+import dev.shadr.core.page.Toggle
 import dev.shadr.core.text.Glyphs
 import kotlin.math.max
 import kotlin.math.min
@@ -53,6 +56,13 @@ class PageRenderer(
                 element.outline?.let { out += sdfOutlineDraw(element, x, yTop, layer, it) }
                 out += sdfBoxDraw(element, x, yTop, layer)
             }
+            ElementType.TEXT_INPUT -> {
+                element.outline?.let { out += sdfOutlineDraw(element, x, yTop, layer, it) }
+                out += sdfBoxDraw(element, x, yTop, layer)
+                out += inputLabelDraw(element, x, yTop, layer)
+            }
+            ElementType.TOGGLE -> out += toggleDraws(element, x, yTop, layer)
+            ElementType.SLIDER -> out += sliderDraws(element, x, yTop, layer)
             else -> {
                 val rounded = roundedRadius(element) > 0.0
                 element.outline?.let {
@@ -87,6 +97,108 @@ class PageRenderer(
             placement = placement,
             content = colored(element, element.text),
         )
+    }
+
+    private fun inputLabelDraw(element: Element, x: Double, y: Double, layer: Double): HudDraw {
+        val input = element.input ?: TextInput()
+        val current = input.value
+        val shown = input.display(current)
+        val colour = when {
+            current.isEmpty() -> input.placeholderColor ?: PLACEHOLDER_COLOR
+            else -> input.textColor ?: element.color
+        }
+
+        val label = element.copy(
+            type = ElementType.TEXT,
+            text = shown,
+            color = colour,
+            width = input.fontSize,
+            height = input.fontSize,
+            textAlignment = dev.shadr.core.TextAlignment.LEFT,
+            outline = null,
+            rounding = null,
+        )
+
+        val labelX = x + input.padding
+        val labelY = y + element.height / 2.0 - TEXT_CENTRE_FACTOR * input.fontSize
+        val internalY = HudPositionCalculator.toInternalTextTopY(labelY, input.fontSize)
+        val alignedX = HudPositionCalculator.textAlignmentOffsetX(
+            labelX, input.fontSize, dev.shadr.core.TextAlignment.LEFT,
+        )
+        val placement = calculator.calculateBoxPlacement(
+            alignedX, internalY, layer + LABEL_LAYER_STEP, input.fontSize, input.fontSize,
+        )
+        return draw(
+            key = "${element.id}__value",
+            element = label,
+            placement = placement,
+            content = colored(label, shown),
+        )
+    }
+
+    private fun pill(
+        key: String,
+        element: Element,
+        x: Double,
+        y: Double,
+        layer: Double,
+        width: Double,
+        height: Double,
+        colour: dev.shadr.core.Rgb,
+    ): HudDraw {
+        return sdfQuad(
+            key = key,
+            element = element,
+            x = x,
+            y = y,
+            width = width,
+            height = height,
+            layer = layer,
+            radius = min(width, height) / 2.0,
+            tint = colour,
+        )
+    }
+
+    private fun toggleDraws(element: Element, x: Double, y: Double, layer: Double): List<HudDraw> {
+        val toggle = element.toggle ?: Toggle()
+        val on = toggle.value
+        val trackHeight = element.height
+        val knob = (trackHeight - KNOB_INSET * 2.0).coerceAtLeast(2.0)
+        val travel = (element.width - knob - KNOB_INSET * 2.0).coerceAtLeast(0.0)
+        val knobX = x + KNOB_INSET + travel * toggle.knobFraction(on)
+
+        return listOf(
+            pill("${element.id}", element, x, y, layer, element.width, trackHeight, toggle.trackColor(on)),
+            pill(
+                "${element.id}__knob", element, knobX, y + KNOB_INSET,
+                layer + LABEL_LAYER_STEP, knob, knob, toggle.knobColor,
+            ),
+        )
+    }
+
+    private fun sliderDraws(element: Element, x: Double, y: Double, layer: Double): List<HudDraw> {
+        val slider = element.slider ?: Slider()
+        val fraction = slider.fractionOf(slider.value)
+        val track = (element.height * TRACK_HEIGHT_RATIO).coerceAtLeast(2.0)
+        val trackY = y + (element.height - track) / 2.0
+        val knob = element.height.coerceAtLeast(track)
+        val travel = (element.width - knob).coerceAtLeast(0.0)
+
+        val out = mutableListOf(
+            pill("${element.id}", element, x, trackY, layer, element.width, track, slider.trackColor),
+        )
+        val filled = knob / 2.0 + travel * fraction
+        if (filled > 0.0) {
+            out += pill(
+                "${element.id}__fill", element, x, trackY,
+                layer + LABEL_LAYER_STEP, filled, track, slider.fillColor,
+            )
+        }
+        out += pill(
+            "${element.id}__knob", element, x + travel * fraction, y,
+            layer + LABEL_LAYER_STEP * 2.0, knob, knob, slider.knobColor,
+        )
+        return out
     }
 
     private fun isDistanceField(element: Element): Boolean = element.font in DISTANCE_FIELD_FONTS
@@ -285,6 +397,7 @@ class PageRenderer(
         !element.interaction.interactive || element.interaction.disableHitbox -> false
         element.type == ElementType.BLUR -> false
         element.type == ElementType.HITBOX -> true
+        element.type.isControl -> true
         else -> element.interaction.actionable
     }
 
@@ -331,6 +444,16 @@ class PageRenderer(
         }
 
     companion object {
+        const val TEXT_CENTRE_FACTOR = 0.1514
+
+        const val LABEL_LAYER_STEP = 0.01
+
+        const val KNOB_INSET = 3.0
+
+        const val TRACK_HEIGHT_RATIO = 0.35
+
+        val PLACEHOLDER_COLOR = dev.shadr.core.Rgb(0x6A6A7A)
+
         const val SHAPE_ITEM = "minecraft:leather_horse_armor"
 
         val DISTANCE_FIELD_FONTS = setOf(Glyphs.FONT_UI_SHARP, Glyphs.FONT_UI_SHARP_SEMIBOLD)

@@ -58,7 +58,7 @@ class VideoPackTest {
     fun `with video off the authored chain is passed through untouched`() {
         val out = generate(setOf(EnvironmentEffect.FROSTED_GLASS), videos = listOf(clip()))
         assertEquals(
-            File(repo(), "shaders/overlays/mc_26_2/post_effect/creeper.json").readText(),
+            File(repo(), "shaders/overlays/${PackOverlay.SHARED_DIRECTORY}/post_effect/creeper.json").readText(),
             chain(out).readText(),
             "generating a pack with video disabled rewrote the frosted glass chain",
         )

@@ -44,7 +44,7 @@ class PacketStreamSink(private val backend: PacketBackend) {
 
         backend.bundle(viewer) {
             for (slot in 0 until slots) {
-                backend.spawn(viewer, carrierIds[slot], FakeEntityKind.ITEM_FRAME, at, FRAME_FACING)
+                backend.spawn(viewer, carrierIds[slot], FakeEntityKind.ITEM_FRAME, at, backend.slots().frameFacing())
                 backend.metadata(viewer, carrierIds[slot], carrierMeta(channel.mapId(slot)))
             }
         }
@@ -86,9 +86,9 @@ class PacketStreamSink(private val backend: PacketBackend) {
     private fun carrierLocation(viewer: Player): Location = viewer.eyeLocation.clone()
 
     private fun carrierMeta(mapId: Int): List<MetaValue> = listOf(
-        MetaValue.of(SHARED_FLAGS_INDEX, FLAG_INVISIBLE),
-        MetaValue.item(FRAME_ITEM_INDEX, mapItem(mapId)),
-        MetaValue.of(FRAME_ROTATION_INDEX, 0),
+        MetaValue.of(backend.slots().sharedFlags(), backend.slots().invisibleFlag()),
+        MetaValue.item(backend.slots().frameItem(), mapItem(mapId)),
+        MetaValue.of(backend.slots().frameRotation(), 0),
     )
 
     private fun mapItem(mapId: Int): ItemStack {
@@ -98,11 +98,6 @@ class PacketStreamSink(private val backend: PacketBackend) {
     }
 
     private companion object {
-        const val SHARED_FLAGS_INDEX = 0
-        const val FRAME_ITEM_INDEX = 9
-        const val FRAME_ROTATION_INDEX = 10
-        const val FLAG_INVISIBLE: Byte = 0x20
-        const val FRAME_FACING = 2
         const val RELOCK_INTERVAL_TICKS = 5
     }
 }

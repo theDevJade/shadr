@@ -36,6 +36,8 @@ class UiSession @JvmOverloads constructor(
 
     private var hoveredId: String? = null
     private var pressedId: String? = null
+    private var focusedInputId: String? = null
+    private val inputValues = mutableMapOf<String, String>()
     private var previousCursor: ScreenPos = cursor
     private var rendered: RenderedPage = renderer.render(page)
 
@@ -47,6 +49,8 @@ class UiSession @JvmOverloads constructor(
         page = next
         hoveredId = null
         pressedId = null
+        focusedInputId = null
+        inputValues.clear()
         predictor?.reset()
         cursor = ScreenPos(next.screen.width / 2.0, next.screen.height / 2.0)
         rerender()
@@ -86,10 +90,16 @@ class UiSession @JvmOverloads constructor(
     }
 
     fun click(rightClick: Boolean = false): String? {
-        val hit = rendered.hitTest(cursor.x, cursor.y) ?: return null
+        val hit = rendered.hitTest(cursor.x, cursor.y)
+        if (hit == null) {
+            focusInput(null)
+            return null
+        }
         val element = page.elements.firstOrNull { it.id == hit.elementId } ?: return null
 
         pressedId = element.id
+        focusedInputId = element.id.takeIf { element.type == dev.shadr.core.page.ElementType.TEXT_INPUT }
+        driveControl(element, hit)
         rerender()
 
         val actions = when {
@@ -99,6 +109,25 @@ class UiSession @JvmOverloads constructor(
         }
         actionRunner.run(player, Action.from(actions), element.interaction.permission)
         return element.id
+    }
+
+    private fun driveControl(element: Element, hit: dev.shadr.core.hud.HitRegion) {
+        element.toggle?.let { toggle ->
+            val now = !(inputValues[element.id]?.toBooleanStrictOrNull() ?: toggle.value)
+            inputValues[element.id] = now.toString()
+            if (toggle.onChange.isNotEmpty()) {
+                actionRunner.run(player, Action.from(toggle.onChange), element.interaction.permission)
+            }
+            return
+        }
+        element.slider?.let { slider ->
+            val fraction = if (hit.width <= 0.0) 0.0 else (cursor.x - hit.x) / hit.width
+            val now = slider.valueAt(fraction)
+            inputValues[element.id] = slider.format(now)
+            if (slider.onChange.isNotEmpty()) {
+                actionRunner.run(player, Action.from(slider.onChange), element.interaction.permission)
+            }
+        }
     }
 
     fun releaseClick() {
@@ -159,10 +188,70 @@ class UiSession @JvmOverloads constructor(
             var result = element
             if (element.id == hoveredId) result = applyEffect(result, element.interaction.hoverEffect)
             if (element.id == pressedId) result = applyEffect(result, element.interaction.clickEffect)
+            result = withControlValue(result, hovered = element.id == hoveredId)
             resolvePlaceholders(result)
         }
         rendered = renderer.render(page.copy(elements = transformed))
         dirty = true
+    }
+
+    private fun withControlValue(element: Element, hovered: Boolean): Element {
+        element.toggle?.let { toggle ->
+            val stored = inputValues[element.id]?.toBooleanStrictOrNull() ?: toggle.value
+            return element.copy(toggle = toggle.copy(value = stored))
+        }
+        element.slider?.let { slider ->
+            val stored = inputValues[element.id]?.toDoubleOrNull() ?: slider.value
+            return element.copy(slider = slider.copy(value = slider.clamp(stored)))
+        }
+        return withInputValue(element, hovered)
+    }
+
+    private fun withInputValue(element: Element, hovered: Boolean): Element {
+        val input = element.input ?: return element
+        val focused = element.id == focusedInputId
+        var result = element.copy(input = input.copy(value = inputValues[element.id] ?: input.value))
+        result = element.outline?.let { outline ->
+            result.copy(outline = outline.copy(color = input.outlineFor(outline.color, hovered, focused)))
+        } ?: result
+        if (focused) result = applyEffect(result, input.focusEffect)
+        return result
+    }
+
+    val focusedInput: String? get() = focusedInputId
+
+    fun inputValue(id: String): String? = inputValues[id]
+
+    fun inputs(): Map<String, String> = inputValues.toMap()
+
+    fun focusInput(id: String?): Boolean {
+        val target = id?.takeIf { candidate ->
+            page.elements.any { it.id == candidate && it.type == dev.shadr.core.page.ElementType.TEXT_INPUT }
+        }
+        if (target == focusedInputId) return false
+        focusedInputId = target
+        rerender()
+        return true
+    }
+
+    fun setInputValue(id: String, raw: String): Boolean {
+        val element = page.elements.firstOrNull {
+            it.id == id && it.type == dev.shadr.core.page.ElementType.TEXT_INPUT
+        } ?: return false
+        val clamped = (element.input ?: dev.shadr.core.page.TextInput()).clamp(raw)
+        if (inputValues[id] == clamped) return false
+        inputValues[id] = clamped
+        rerender()
+        return true
+    }
+
+    fun submitInput(id: String) {
+        val element = page.elements.firstOrNull {
+            it.id == id && it.type == dev.shadr.core.page.ElementType.TEXT_INPUT
+        } ?: return
+        val actions = element.input?.onSubmit.orEmpty()
+        if (actions.isEmpty()) return
+        actionRunner.run(player, Action.from(actions), element.interaction.permission)
     }
 
     private fun resolvePlaceholders(element: Element): Element {

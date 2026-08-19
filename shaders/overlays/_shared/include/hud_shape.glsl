@@ -6,8 +6,6 @@
  */
 #define SHADR_SHAPE_GRID 64.0
 
-// Kept below the first #define on purpose: spotless treats everything above the delimiter as
-// the licence banner, so a declaration placed there is silently deleted by `spotlessApply`.
 float shadr_rounded_box(vec2 p, vec2 halfSize, float radius) {
     vec2 q = abs(p) - (halfSize - radius);
     return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - radius;

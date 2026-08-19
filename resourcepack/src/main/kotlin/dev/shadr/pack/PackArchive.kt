@@ -25,6 +25,18 @@ data class PackArchive(val bytes: ByteArray, val sha1: ByteArray, val file: File
 object PackBuilder {
     private const val HUD_SPRITES_PATH = "assets/minecraft/textures/gui/sprites/hud/"
 
+    private const val GUI_SPRITES_PATH = "assets/minecraft/textures/gui/sprites/"
+
+    private const val GUI_TEXTURES_PATH = "assets/minecraft/textures/gui/"
+
+    val ANVIL_HIDE_FILES: List<String> = listOf(
+        GUI_TEXTURES_PATH + "container/anvil.png",
+        GUI_SPRITES_PATH + "container/anvil/text_field.png",
+        GUI_SPRITES_PATH + "container/anvil/text_field_disabled.png",
+        GUI_SPRITES_PATH + "container/anvil/error.png",
+        GUI_SPRITES_PATH + "container/slot.png",
+    )
+
     val HUD_SPRITE_FILES: List<String> = buildList {
         addAll(
             listOf(
@@ -124,7 +136,7 @@ object PackBuilder {
         file.readBytes()
     }
 
-    private fun transparentPixelPng(): ByteArray {
+    fun transparentPixelPng(): ByteArray {
         val image = java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_ARGB)
         val out = ByteArrayOutputStream()
         ImageIO.write(image, "png", out)

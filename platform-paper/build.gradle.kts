@@ -17,6 +17,8 @@ sourceSets.named("main") {
 
 val nmsBundle: File = rootProject.file("platform-paper-nms/build/libs/shadr-paper-nms-$version.jar")
 
+val allowMissingNms: Boolean = providers.gradleProperty("allowMissingNms").map { it != "false" }.getOrElse(false)
+
 tasks.jar {
     archiveBaseName.set("shadr-paper")
 
@@ -24,6 +26,25 @@ tasks.jar {
     from(rootProject.file("NOTICE")) { into("META-INF") }
 
     inputs.files(nmsBundle).withPropertyName("nmsBundle").withPathSensitivity(PathSensitivity.NAME_ONLY)
+    inputs.property("allowMissingNms", allowMissingNms)
+    doFirst {
+        if (!nmsBundle.isFile && !allowMissingNms) {
+            throw GradleException(
+                """
+                |the packet backends are missing, so this jar would silently fall back to Bukkit
+                |display entities on every server: no packet HUD, no packet camera, no world
+                |shaders, no video or map streaming.
+                |
+                |expected: ${nmsBundle.path}
+                |
+                |build it first, it is a separate Gradle build and needs both JDK 21 and JDK 25:
+                |    (cd platform-paper-nms && ./gradlew build)
+                |
+                |to build a deliberately backend-less jar anyway, pass -PallowMissingNms
+                """.trimMargin(),
+            )
+        }
+    }
     from(provider { if (nmsBundle.isFile) zipTree(nmsBundle) else emptyList<Any>() })
 
     from(configurations.runtimeClasspath.map { classpath ->
@@ -39,6 +60,7 @@ tasks.jar {
 tasks.test {
     useJUnitPlatform()
     dependsOn(tasks.processResources, tasks.jar)
+    systemProperty("shadr.allowMissingNms", allowMissingNms.toString())
 }
 
 val editorWeb: File = providers.gradleProperty("shadrEditorWeb")

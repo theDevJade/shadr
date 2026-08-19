@@ -116,34 +116,38 @@ class MsdfTest {
     }
 
     @Test
-    fun `every overlay's decode range matches the generator's spread`() {
-        val overlays = File("../shaders/overlays").listFiles()?.sortedBy { it.name }.orEmpty()
-        check(overlays.isNotEmpty()) { "no shader overlays found" }
+    fun `the shared decode range matches the generator's spread`() {
+        val glsl = File("../shaders/overlays/${PackOverlay.SHARED_DIRECTORY}/include/hud_fragment.glsl")
+        assertTrue(glsl.isFile, "the shared decode include is missing at ${glsl.path}")
 
-        var checked = 0
-        for (overlay in overlays) {
-            val glsl = File(overlay, "include/hud_fragment.glsl")
-            if (!glsl.isFile) continue
-            val declared = Regex("#define\\s+SHADR_FIELD_RANGE\\s+([0-9.]+)")
-                .find(glsl.readText())?.groupValues?.get(1)?.toDouble()
-            assertEquals(4.0, declared, "${overlay.name} disagrees with FontAssets.MSDF_SPREAD")
-            checked++
-        }
-        assertTrue(checked >= 3, "expected at least three overlays to decode, found $checked")
+        val declared = Regex("#define\\s+SHADR_FIELD_RANGE\\s+([0-9.]+)")
+            .find(glsl.readText())?.groupValues?.get(1)?.toDouble()
+        assertEquals(
+            4.0, declared,
+            "the shared hud_fragment.glsl disagrees with FontAssets.MSDF_SPREAD, so every overlay " +
+                "would decode glyphs at the wrong range at once",
+        )
     }
 
     @Test
-    fun `every overlay with a decode include also overrides a text fragment program`() {
-        val overlays = File("../shaders/overlays").listFiles()?.sortedBy { it.name }.orEmpty()
-        for (overlay in overlays) {
-            if (!File(overlay, "include/hud_fragment.glsl").isFile) continue
-            val core = File(overlay, "core")
-            val programs = core.listFiles { f -> f.name.endsWith(".fsh") }.orEmpty()
-            assertTrue(
-                programs.any { it.name == "text.fsh" || it.name == "rendertype_text.fsh" },
-                "${overlay.name} has a decode include but no text fragment program",
-            )
-        }
+    fun `every overlay has a text fragment program that can use the decode include`() {
+        val overlays = File("../shaders/overlays").listFiles()
+            ?.filter { it.isDirectory && File(it, "core").isDirectory }
+            ?.sortedBy { it.name }
+            .orEmpty()
+        check(overlays.isNotEmpty()) { "no shader overlays found" }
+
+        val missing = overlays.filterNot { overlay ->
+            File(overlay, "core").listFiles { f -> f.name.endsWith(".fsh") }
+                .orEmpty()
+                .any { it.name == "text.fsh" || it.name == "rendertype_text.fsh" }
+        }.map { it.name }
+
+        assertEquals(
+            emptyList(), missing,
+            "the shared decode include reaches every overlay, but these overlays have no text " +
+                "fragment program to use it, so their HUD text renders as raw atlas samples",
+        )
     }
 
     @Test

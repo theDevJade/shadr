@@ -39,7 +39,8 @@ Essentially, vertex reprojection below a threshold, along with SDF math. Shadr u
 - [ ] Multi-aspect video support
 - [ ] Downscaling videos to match size
 - [ ] World-space UI
-- [ ] Multi-version support past 26.2
+- [x] Multi-version support: Paper 1.21.6 through 26.2. SDF shapes, text, items, images,
+      custom item shaders and frosted-glass blur render on every supported version; video, streaming and the sky, cloud and celestial overrides are 26.2 only
 - [ ] Improve editor consistency
 
 

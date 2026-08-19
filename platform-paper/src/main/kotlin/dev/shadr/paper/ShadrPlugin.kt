@@ -40,6 +40,7 @@ class ShadrPlugin : JavaPlugin() {
     private lateinit var bridge: PaperBridge
     private lateinit var renderer: PageRenderer
     private lateinit var actionRunner: ActionRunner
+    private var textCapture: AnvilTextCapture? = null
 
     private val sessions = mutableMapOf<String, UiSession>()
     private var pages: Map<String, Page> = emptyMap()
@@ -78,6 +79,17 @@ class ShadrPlugin : JavaPlugin() {
             null
         }
 
+        textCapture = AnvilTextCapture(
+            onValue = { player, elementId, value ->
+                sessions[player.uuid]?.let { session ->
+                    if (session.setInputValue(elementId, value)) {
+                        bridge.hud().apply(player, session.draws())
+                    }
+                }
+            },
+            log = { message -> logger.info("shadr: $message") },
+        )
+
         bridge = PaperBridge(
             this,
             backend = backend,
@@ -88,6 +100,7 @@ class ShadrPlugin : JavaPlugin() {
             },
         )
         server.pluginManager.registerEvents(bridge, this)
+        textCapture?.let { server.pluginManager.registerEvents(AnvilTextListener(it), this) }
 
         renderer = PageRenderer(
             fixShaders = config.rendering.fixShaders,
@@ -98,6 +111,7 @@ class ShadrPlugin : JavaPlugin() {
                 plugin = this,
                 openPageHandler = { player, page, replacing -> openPage(player, page, replacing) },
                 closePageHandler = ::closePage,
+                placeholders = ::placeholderResolver,
             ),
         )
 
@@ -123,6 +137,7 @@ class ShadrPlugin : JavaPlugin() {
 
     override fun onDisable() {
         sessions.keys.toList().forEach { closePage(PlayerId(it)) }
+        textCapture?.releaseAll()
         bridge.cameraControl.stopAll()
         packHost.stop()
         editor?.stop()
@@ -230,6 +245,7 @@ class ShadrPlugin : JavaPlugin() {
             environment = environment.all(),
             videos = videoSources(),
             stream = config.stream.takeIf { it.enabled }?.geometry(),
+            hideAnvilScreen = config.pack.hideAnvilScreen,
         ).build(packRoot)
 
         val atlas = UiImageAtlas(
@@ -315,7 +331,10 @@ class ShadrPlugin : JavaPlugin() {
         bridge.players().onJoin { player ->
             if (config.pack.applyOnJoin) sendPack(player)
         }
-        bridge.players().onQuit { player -> sessions.remove(player.uuid) }
+        bridge.players().onQuit { player ->
+            sessions.remove(player.uuid)
+            player.bukkitPlayer()?.let { textCapture?.release(it) }
+        }
 
         bridge.input().onSample { sample ->
             val session = sessions[sample.player.uuid] ?: return@onSample
@@ -328,11 +347,34 @@ class ShadrPlugin : JavaPlugin() {
             )
             if (sample.leftClick) session.click(rightClick = false)
             if (sample.rightClick) session.click(rightClick = true)
+            if (sample.leftClick || sample.rightClick) openFocusedInput(sample.player, session)
             if (changed || sample.leftClick || sample.rightClick) {
                 bridge.hud().apply(sample.player, session.draws())
             }
         }
     }
+
+    private fun openFocusedInput(player: PlayerId, session: dev.shadr.core.session.UiSession) {
+        val capture = textCapture ?: return
+        val bukkit = player.bukkitPlayer() ?: return
+        val focused = session.focusedInput
+        if (focused == null) {
+            capture.release(bukkit)
+            return
+        }
+        if (capture.focusedElement(bukkit) == focused) return
+        val element = session.currentPage.elements.firstOrNull { it.id == focused } ?: return
+        val input = element.input ?: return
+        capture.focus(
+            player = bukkit,
+            elementId = focused,
+            current = session.inputValue(focused) ?: input.value,
+            maxLength = input.maxLength,
+        )
+    }
+
+    private fun PlayerId.bukkitPlayer() =
+        runCatching { Bukkit.getPlayer(java.util.UUID.fromString(uuid)) }.getOrNull()
 
     private fun tick() {
         bridge.tick()
@@ -377,9 +419,16 @@ class ShadrPlugin : JavaPlugin() {
     private var placeholderTicks = 0
 
     private fun placeholderResolver(player: PlayerId): dev.shadr.core.page.PlaceholderResolver {
+        val inputs = inputResolver()
         val builtins = builtinResolver(player)
-        val papi = papiResolver ?: return builtins
-        return dev.shadr.core.page.PlaceholderResolver.chain(builtins, papi)
+        val papi = papiResolver
+            ?: return dev.shadr.core.page.PlaceholderResolver.chain(inputs, builtins)
+        return dev.shadr.core.page.PlaceholderResolver.chain(inputs, builtins, papi)
+    }
+
+    private fun inputResolver() = dev.shadr.core.page.InputPlaceholders { player, id ->
+        val session = sessions[player.uuid] ?: return@InputPlaceholders null
+        session.inputs().entries.firstOrNull { it.key.equals(id, ignoreCase = true) }?.value
     }
 
     private var papiResolver: dev.shadr.core.page.PlaceholderResolver? = null
@@ -427,6 +476,7 @@ class ShadrPlugin : JavaPlugin() {
         val existing = sessions[player.uuid]
         if (existing != null && replacing) {
             existing.openPage(page)
+            applyCameraFor(player, page)
             bridge.hud().apply(player, existing.draws())
             return
         }
@@ -442,16 +492,31 @@ class ShadrPlugin : JavaPlugin() {
         )
         sessions[player.uuid] = session
 
-        bridge.camera().start(player)
-        bridge.camera().setClickTargetsEnabled(player, true)
+        applyCameraFor(player, page)
         bridge.hud().mount(player)
         bridge.hud().apply(player, session.draws())
+    }
+
+    private fun applyCameraFor(player: PlayerId, page: dev.shadr.core.page.Page) {
+        val wanted = page.screen.locksCamera
+        val active = bridge.cameraControl.isActive(player)
+        if (wanted == active) return
+        if (wanted) {
+            bridge.camera().start(player)
+            bridge.camera().setClickTargetsEnabled(player, true)
+        } else {
+            bridge.camera().setClickTargetsEnabled(player, false)
+            bridge.camera().stop(player)
+        }
     }
 
     fun closePage(player: PlayerId) {
         sessions.remove(player.uuid) ?: return
         runCatching { Bukkit.getPlayer(java.util.UUID.fromString(player.uuid)) }.getOrNull()
-            ?.let { bridge.streamSink?.stop(it) }
+            ?.let {
+                bridge.streamSink?.stop(it)
+                textCapture?.release(it)
+            }
         bridge.hud().clear(player)
         bridge.camera().setClickTargetsEnabled(player, false)
         bridge.camera().stop(player)

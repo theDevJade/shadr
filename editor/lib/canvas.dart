@@ -422,6 +422,44 @@ class _PagePainter extends CustomPainter {
             Paint()..color = Colors.white.withValues(alpha: color.a),
           );
         }
+      case 'TEXT_INPUT':
+        final fieldRadius = element.rounding?.resolvedRadius(rect.width, rect.height) ?? 0;
+        final field = RRect.fromRectAndRadius(rect, Radius.circular(fieldRadius));
+        canvas.drawRRect(field, paint);
+        canvas.drawRRect(
+          field,
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.18)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1 / viewport.scale,
+        );
+        final caretX = rect.left + math.min(10.0, rect.width / 8);
+        final inset = rect.height * 0.28;
+        canvas.drawLine(
+          Offset(caretX, rect.top + inset),
+          Offset(caretX, rect.bottom - inset),
+          Paint()
+            ..color = Colors.white.withValues(alpha: 0.45)
+            ..strokeWidth = 1.5 / viewport.scale,
+        );
+      case 'TOGGLE':
+        final trackRadius = rect.height / 2;
+        canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(trackRadius)), paint);
+        final knob = math.max(2.0, rect.height - 6);
+        canvas.drawOval(
+          Rect.fromLTWH(rect.left + 3, rect.top + 3, knob, knob),
+          Paint()..color = Colors.white.withValues(alpha: 0.9),
+        );
+      case 'SLIDER':
+        final trackHeight = math.max(2.0, rect.height * 0.35);
+        final track = Rect.fromLTWH(
+          rect.left, rect.top + (rect.height - trackHeight) / 2, rect.width, trackHeight);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(track, Radius.circular(trackHeight / 2)), paint);
+        canvas.drawOval(
+          Rect.fromLTWH(rect.left, rect.top, rect.height, rect.height),
+          Paint()..color = Colors.white.withValues(alpha: 0.9),
+        );
       case 'BLUR':
         final blurRadius = element.rounding?.resolvedRadius(rect.width, rect.height) ?? 0;
         final rounded = RRect.fromRectAndRadius(rect, Radius.circular(blurRadius));

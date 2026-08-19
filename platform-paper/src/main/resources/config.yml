@@ -7,6 +7,7 @@ resource-pack:
 
   # Blank the vanilla HUD sprites
   remove-default-hotbar: false
+  hide-anvil-screen: true
 
   hosting:
     # shadr hosts the pack itself on the server's own address.

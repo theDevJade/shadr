@@ -7,27 +7,6 @@
 package dev.shadr.core.hud
 
 object DisplayMeta {
-    const val INTERPOLATION_DELAY = 8
-    const val INTERPOLATION_DURATION = 9
-    const val TRANSFORMATION_DURATION = 10
-    const val TRANSLATION = 11
-    const val SCALE = 12
-    const val LEFT_ROTATION = 13
-    const val RIGHT_ROTATION = 14
-    const val BILLBOARD = 15
-    const val BRIGHTNESS = 16
-    const val VIEW_RANGE = 17
-
-    const val ITEM = 23
-    const val ITEM_TRANSFORM = 24
-
-    const val TEXT = 23
-    const val LINE_WIDTH = 24
-    const val BACKGROUND_COLOR = 25
-    const val TEXT_OPACITY = 26
-    const val TEXT_FLAGS = 27
-
-    const val BRIGHTNESS_FULL = (15 shl 20) or (15 shl 4)
     const val BRIGHTNESS_LEVEL = 15
 
     const val TEXT_BACKGROUND_DEFAULT = 0x40000000
@@ -42,8 +21,6 @@ object DisplayMeta {
     const val DEFAULT_TEXT_WRAP_LINE_WIDTH = 200
 
     const val UNWRAPPED_LINE_WIDTH = 20_000
-
-    const val BILLBOARD_FIXED: Byte = 0
 
     fun textFlags(alignment: dev.shadr.core.TextAlignment, useDefaultBackground: Boolean = false): Byte {
         var flags = 0

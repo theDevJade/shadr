@@ -252,8 +252,48 @@ class TemplateResolver(
             originX = ctx.offsetX,
             originY = ctx.offsetY,
             componentName = ctx.componentName,
+            input = readTextInput(node).takeIf { type == ElementType.TEXT_INPUT },
+            toggle = readToggle(node).takeIf { type == ElementType.TOGGLE },
+            slider = readSlider(node).takeIf { type == ElementType.SLIDER },
         )
     }
+
+    private fun readToggle(node: Node) = Toggle(
+        value = node.bool("value", "checked", "on"),
+        onColor = Rgb.parse(node.string("onColor", "on-color")) ?: Toggle().onColor,
+        offColor = Rgb.parse(node.string("offColor", "off-color")) ?: Toggle().offColor,
+        knobColor = Rgb.parse(node.string("knobColor", "knob-color")) ?: Toggle().knobColor,
+        onChange = readActions(node, "onChangeAction", "onChange"),
+    )
+
+    private fun readSlider(node: Node) = Slider(
+        value = node.number("value", fallback = 0.0),
+        min = node.number("min", fallback = 0.0),
+        max = node.number("max", fallback = 100.0),
+        step = node.number("step", fallback = 0.0),
+        trackColor = Rgb.parse(node.string("trackColor", "track-color")) ?: Slider().trackColor,
+        fillColor = Rgb.parse(node.string("fillColor", "fill-color")) ?: Slider().fillColor,
+        knobColor = Rgb.parse(node.string("knobColor", "knob-color")) ?: Slider().knobColor,
+        onChange = readActions(node, "onChangeAction", "onChange"),
+    )
+
+    private fun readTextInput(node: Node) = TextInput(
+        placeholder = node.string("placeholder", "hint") ?: "",
+        value = node.string("value") ?: "",
+        maxLength = node.number("maxLength", "max-length", fallback = TextInput.DEFAULT_MAX_LENGTH.toDouble())
+            .toInt()
+            .coerceIn(1, TextInput.HARD_MAX_LENGTH),
+        lines = node.number("lines", fallback = 1.0).toInt().coerceIn(1, TextInput.SIGN_LINES),
+        secret = node.bool("secret", "password"),
+        textColor = Rgb.parse(node.string("textColor", "text-color")),
+        placeholderColor = Rgb.parse(node.string("placeholderColor", "placeholder-color")),
+        focusEffect = node.string("focusEffect", "focus.effect"),
+        hoverOutline = Rgb.parse(node.string("hoverOutline", "hover.outline")),
+        focusOutline = Rgb.parse(node.string("focusOutline", "focus.outline")),
+        fontSize = node.number("fontSize", "font-size", fallback = 32.0),
+        padding = node.number("padding", fallback = 10.0),
+        onSubmit = readActions(node, "onSubmitAction", "onSubmit"),
+    )
 
     private fun readOutline(node: Node): Outline? {
         val size = node.number("outline.size", fallback = 0.0)

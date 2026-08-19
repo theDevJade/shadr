@@ -144,30 +144,22 @@ class HudPositionCalculatorTest {
     }
 
     @Test
-    fun `every overlay's GLSL agrees with the Kotlin band constant`() {
-        val overlays = java.io.File("../shaders/overlays").listFiles()
-            ?.filter { it.isDirectory && !it.name.startsWith(".") }
-            ?.sortedBy { it.name }
-            .orEmpty()
-        check(overlays.isNotEmpty()) { "no shader overlays found" }
+    fun `the shared GLSL agrees with the Kotlin band constant`() {
+        val glsl = java.io.File("../shaders/overlays/_shared/include/hud.glsl")
+        check(glsl.isFile) { "the shared hud.glsl is missing at ${glsl.path}" }
+        val source = glsl.readText()
 
-        for (overlay in overlays) {
-            val glsl = java.io.File(overlay, "include/hud.glsl")
-            check(glsl.isFile) { "${overlay.name} has no hud.glsl" }
-            val source = glsl.readText()
+        val declared = Regex("#define\\s+SHADR_FIELD_BAND\\s+([0-9.]+)")
+            .find(source)?.groupValues?.get(1)?.toDouble()
+        assertEquals(
+            HudPositionCalculator.FIELD_BAND, declared,
+            "the shared hud.glsl disagrees with HudPositionCalculator, so every overlay is wrong at once",
+        )
 
-            val declared = Regex("#define\\s+SHADR_FIELD_BAND\\s+([0-9.]+)")
-                .find(source)?.groupValues?.get(1)?.toDouble()
-            assertEquals(
-                HudPositionCalculator.FIELD_BAND, declared,
-                "${overlay.name}/hud.glsl disagrees with HudPositionCalculator",
-            )
-
-            assertTrue(
-                source.contains("shadrMode"),
-                "${overlay.name}/hud.glsl does not strip the distance-field band",
-            )
-        }
+        assertTrue(
+            source.contains("shadrMode"),
+            "the shared hud.glsl does not strip the distance-field band",
+        )
     }
 
     private companion object {

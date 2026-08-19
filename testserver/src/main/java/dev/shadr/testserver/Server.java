@@ -66,6 +66,8 @@ public final class Server {
     private static MinestomBridge bridge;
 
     private static Page demoPage;
+
+    private static dev.shadr.minestom.MinestomAnvilCapture textCapture;
     private static PageRenderer renderer;
     private static Map<String, EffectDef> effects = Map.of();
 
@@ -111,6 +113,16 @@ public final class Server {
         bridge.install();
         shaderApi = new ShaderApi(bridge, SHADERS::load);
 
+        textCapture = new dev.shadr.minestom.MinestomAnvilCapture((player, elementId, value) -> {
+            final UiSession session = sessions.get(player.getUuid());
+            if (session == null) return;
+            if (session.setInputValue(elementId, value)) {
+                bridge.hud().apply(player, session.draws());
+            }
+        });
+        textCapture.onLog(message -> System.out.println("[shadr] " + message));
+        textCapture.install(MinecraftServer.getGlobalEventHandler());
+
         bridge.input().onSample(sample -> {
             final UiSession session = sessions.get(sample.getPlayer().getUuid());
             if (session == null) return kotlin.Unit.INSTANCE;
@@ -123,6 +135,7 @@ public final class Server {
             boolean clicked = false;
             if (sample.getLeftClick() || sample.getRightClick()) {
                 session.click(sample.getRightClick());
+                openFocusedInput(sample.getPlayer(), session);
                 clicked = true;
             }
             if (changed || clicked) bridge.hud().apply(sample.getPlayer(), session.draws());
@@ -144,11 +157,6 @@ public final class Server {
 
         registerCommands();
         startEditor();
-
-        System.out.println("[shadr] baking video sources...");
-        final long bakedAt = System.nanoTime();
-        videoSources();
-        System.out.printf("[shadr] video ready in %.1fs%n", (System.nanoTime() - bakedAt) / 1e9);
 
         if (Boolean.parseBoolean(System.getProperty("shadr.pack.rebuild", "true"))) {
             System.out.println("[shadr] rebuilding the pack so launch properties apply");
@@ -220,7 +228,7 @@ public final class Server {
                 demoPage.getScreen().getHeight(),
                 demoPage.getScreen().getCursorSpeed());
 
-        bridge.cameraControl().start(id, () -> {
+        final Runnable mount = () -> {
             bridge.inputSource().resetMapper(id);
             bridge.hud().mount(id);
 
@@ -230,16 +238,119 @@ public final class Server {
                     renderer,
                     effects,
                     new dev.shadr.core.action.ActionRunner(new LoggingActionHost()),
-                    new CursorPredictor());
+                    new CursorPredictor(),
+                    placeholdersFor(id));
             sessions.put(id.getUuid(), session);
             bridge.hud().apply(id, session.draws());
             startStreamIfNeeded(id);
             System.out.println("[shadr] UI open for " + player.getUsername());
-        });
+        };
+
+        if (demoPage.getScreen().getLocksCamera()) {
+            bridge.cameraControl().start(id, mount::run);
+        } else {
+            mount.run();
+        }
+    }
+
+    static void switchPage(PlayerId player, String name) {
+        final Page next = pages.get(name);
+        if (next == null) {
+            System.out.println("[shadr] no page named '" + name + "'; have " + pages.keySet());
+            return;
+        }
+        final UiSession session = sessions.get(player.getUuid());
+        if (session == null) return;
+
+        bridge.inputSource().useScreen(
+                next.getScreen().getWidth(),
+                next.getScreen().getHeight(),
+                next.getScreen().getCursorSpeed());
+        bridge.inputSource().resetMapper(player);
+
+        session.openPage(next);
+        System.out.println("[shadr] switched to page '" + name + "' (hud="
+                + next.getScreen().getHud() + ")");
+        applyCameraFor(player, next, () -> bridge.hud().apply(player, session.draws()));
+    }
+
+    private static dev.shadr.core.page.PlaceholderResolver placeholdersFor(PlayerId id) {
+        return dev.shadr.core.page.PlaceholderResolver.Companion.chain(
+                new dev.shadr.core.page.InputPlaceholders((player, field) -> {
+                    final UiSession session = sessions.get(player.getUuid());
+                    if (session == null) return null;
+                    for (Map.Entry<String, String> entry : session.inputs().entrySet()) {
+                        if (entry.getKey().equalsIgnoreCase(field)) return entry.getValue();
+                    }
+                    return null;
+                }),
+                new dev.shadr.core.page.BuiltinPlaceholders(() -> {
+                    final Player target = MinecraftServer.getConnectionManager()
+                            .getOnlinePlayerByUuid(UUID.fromString(id.getUuid()));
+                    final long time = target == null ? 0L : target.getInstance().getTime() % 24000L;
+                    final int hours = (int) ((time / 1000L + 6L) % 24L);
+                    final int minutes = (int) ((time % 1000L) * 60L / 1000L);
+                    return new dev.shadr.core.page.BuiltinPlaceholders.Snapshot(
+                            target == null ? "" : target.getUsername(),
+                            MinecraftServer.getConnectionManager().getOnlinePlayerCount(),
+                            MinecraftServer.getConnectionManager().getOnlinePlayerCount(),
+                            "20.0",
+                            target == null ? 0 : target.getLatency(),
+                            "demo",
+                            String.format("%02d:%02d", hours, minutes));
+                }));
+    }
+
+    private static void openFocusedInput(PlayerId id, UiSession session) {
+        if (textCapture == null) return;
+        final Player player = MinecraftServer.getConnectionManager()
+                .getOnlinePlayerByUuid(UUID.fromString(id.getUuid()));
+        if (player == null) return;
+
+        final String focused = session.getFocusedInput();
+        if (focused == null) {
+            textCapture.release(player);
+            return;
+        }
+        if (focused.equals(textCapture.focusedElement(player))) return;
+
+        for (dev.shadr.core.page.Element element : session.getCurrentPage().getElements()) {
+            if (!element.getId().equals(focused) || element.getInput() == null) continue;
+            final String current = session.inputValue(focused) != null
+                    ? session.inputValue(focused)
+                    : element.getInput().getValue();
+            textCapture.focus(player, focused, current, element.getInput().getMaxLength());
+            return;
+        }
+    }
+
+    private static void applyCameraFor(PlayerId player, Page page, Runnable whenReady) {
+        final boolean wantsSeat = page.getScreen().getLocksCamera();
+        if (wantsSeat == bridge.cameraControl().isSeated(player)) {
+            whenReady.run();
+            return;
+        }
+
+        bridge.hud().clear(player);
+        bridge.forget(player);
+        bridge.cameraControl().setClickTargetsEnabled(player, false);
+        bridge.cameraControl().stop(player);
+
+        final Runnable mount = () -> {
+            bridge.inputSource().resetMapper(player);
+            bridge.hud().mount(player);
+            whenReady.run();
+        };
+        if (wantsSeat) {
+            bridge.cameraControl().start(player, mount::run);
+        } else {
+            bridge.cameraControl().startFollowing(player, mount::run);
+        }
     }
 
     private static void closeUi(Player player) {
         final PlayerId id = new PlayerId(player.getUuid().toString());
+        if (textCapture != null) textCapture.release(player);
         bridge.streamSink().stop(id);
         sessions.remove(id.getUuid());
         stopAudio(id);
@@ -437,8 +548,10 @@ public final class Server {
                         REPO_ROOT.resolve("protocol/components").toFile(),
                         REPO_ROOT.resolve("protocol/effects").toFile()),
                 edited -> {
-                    demoPage = edited;
+                    pages.put(edited.getName(), edited);
+                    if (edited.getName().equals(PAGE_NAME)) demoPage = edited;
                     for (Map.Entry<String, UiSession> open : sessions.entrySet()) {
+                        if (!open.getValue().getCurrentPage().getName().equals(edited.getName())) continue;
                         open.getValue().refreshPage(edited);
                         bridge.hud().apply(new PlayerId(open.getKey()), open.getValue().draws());
                     }
@@ -451,15 +564,20 @@ public final class Server {
                 new dev.shadr.pack.AtlasImageSource(
                         REPO_ROOT.resolve("assets/shadr/contents").toFile(),
                         () -> lastAtlas),
-                new dev.shadr.pack.LibraryVideoSource(REPO_ROOT.resolve("contents").toFile()),
+                new BakeOnUpload(
+                        new dev.shadr.pack.LibraryVideoSource(REPO_ROOT.resolve("contents").toFile())),
                 line -> {
                     System.out.println("[shadr] " + line);
                     return kotlin.Unit.INSTANCE;
                 });
     }
 
+    static final String SELECTOR_PAGE = "__pages";
+
     private static final String PAGE_NAME =
-            System.getenv().getOrDefault("SHADR_PAGE", "demo");
+            System.getenv().getOrDefault("SHADR_PAGE", SELECTOR_PAGE);
+
+    private static final Map<String, Page> pages = new java.util.LinkedHashMap<>();
 
     private static void loadPage() {
         final PageLoader loader = new PageLoader(
@@ -467,18 +585,114 @@ public final class Server {
                 REPO_ROOT.resolve("protocol/components").toFile(),
                 REPO_ROOT.resolve("protocol/effects").toFile());
         effects = loader.loadEffects();
-        demoPage = loader.loadPage(
-                REPO_ROOT.resolve("protocol/pages/" + PAGE_NAME + ".yml").toFile(),
-                loader.loadComponents());
+
+        pages.clear();
+        final Map<String, Page> loaded = new java.util.TreeMap<>(loader.loadPages(loader.loadComponents()));
+        pages.putAll(loaded);
         loader.getIssues().forEach(issue -> System.out.println("[shadr] page issue: " + issue));
+        if (pages.isEmpty()) throw new IllegalStateException("protocol/pages has no loadable page");
+
+        pages.put(SELECTOR_PAGE, selectorPage(loaded.keySet(), screenTemplate(loaded)));
+
+        demoPage = pages.get(PAGE_NAME);
         if (demoPage == null) {
-            throw new IllegalStateException(
-                    "protocol/pages/" + PAGE_NAME + ".yml did not load");
+            throw new IllegalStateException("no page named '" + PAGE_NAME + "'; have " + pages.keySet());
         }
         renderer = new PageRenderer();
+        System.out.println("[shadr] " + loaded.size() + " page(s) loaded: " + loaded.keySet());
         System.out.println("[shadr] page '" + PAGE_NAME + "': "
                 + demoPage.getElements().size() + " element(s)");
     }
+
+    private static dev.shadr.core.page.ScreenDef screenTemplate(java.util.Map<String, Page> loaded) {
+        for (Page page : loaded.values()) return page.getScreen();
+        return new dev.shadr.core.page.ScreenDef();
+    }
+
+    private static Page selectorPage(
+            java.util.Collection<String> names, dev.shadr.core.page.ScreenDef screen) {
+        final List<Object> blocks = new java.util.ArrayList<>();
+
+        blocks.add(map(
+                "type", "block",
+                "id", "selector_dim",
+                "layer", 0.0,
+                "color", "08080b",
+                "opacity", 220,
+                "position", map("x", 0, "y", 0),
+                "size", map("width", (int) screen.getWidth(), "height", (int) screen.getHeight())));
+
+        blocks.add(map(
+                "type", "text",
+                "id", "selector_title",
+                "layer", 20.0,
+                "color", "e8e8f0",
+                "text", "shadr pages",
+                "font", "shadr_semibold",
+                "position", map("x", "halfWidth", "y", 140),
+                "size", map("width", 44, "height", 44),
+                "textAlign", "center"));
+
+        final int columns = names.size() > ROWS_PER_COLUMN ? 2 : 1;
+        final int rows = (names.size() + columns - 1) / columns;
+        int index = 0;
+        for (String name : names) {
+            final int column = index / rows;
+            final int row = index % rows;
+            final double offset = (column - (columns - 1) / 2.0) * (BUTTON_W + 30) - BUTTON_W / 2.0;
+            final String x = offset < 0
+                    ? "halfWidth - " + (-offset)
+                    : "halfWidth + " + offset;
+            final int y = 230 + row * (BUTTON_H + 14);
+
+            blocks.add(map(
+                    "type", "block_rounded",
+                    "id", "page_" + name,
+                    "layer", 10.0,
+                    "color", "1b1b24",
+                    "position", map("x", x, "y", y),
+                    "size", map("width", BUTTON_W, "height", BUTTON_H),
+                    "rounding", map("size", "small"),
+                    "outline", map("size", 1, "color", "2a2a36"),
+                    "hoverEffect", "lift",
+                    "clickEffect", "press",
+                    "onClickAction", List.of("sound: shadr.click", "redirect: " + name)));
+
+            blocks.add(map(
+                    "type", "text",
+                    "id", "page_" + name + "_label",
+                    "layer", 20.0,
+                    "color", "e8e8f0",
+                    "text", name,
+                    "position", map("x", labelX(offset), "y", y + BUTTON_H / 2.0 - 4),
+                    "size", map("width", 24, "height", 24),
+                    "textAlign", "center",
+                    "disableHitbox", true));
+            index++;
+        }
+
+        final dev.shadr.core.page.TemplateResolver resolver = new dev.shadr.core.page.TemplateResolver();
+        final List<dev.shadr.core.page.Element> elements = resolver.resolve(blocks, screen);
+        resolver.getIssues().forEach(issue -> System.out.println("[shadr] selector issue: " + issue));
+        return new Page(SELECTOR_PAGE, screen, elements, List.of());
+    }
+
+    private static String labelX(double offset) {
+        final double centre = offset + BUTTON_W / 2.0;
+        return centre < 0 ? "halfWidth - " + (-centre) : "halfWidth + " + centre;
+    }
+
+    private static Map<String, Object> map(Object... pairs) {
+        final Map<String, Object> out = new java.util.LinkedHashMap<>();
+        for (int i = 0; i < pairs.length; i += 2) out.put((String) pairs[i], pairs[i + 1]);
+        return out;
+    }
+
+    private static final int BUTTON_W = 280;
+
+    private static final int BUTTON_H = 44;
+
+    private static final int ROWS_PER_COLUMN = 9;
 
     private static final class LoggingActionHost implements dev.shadr.core.action.ActionHost {
         @Override public void runAsPlayer(PlayerId player, String command) { log("command", command); }
@@ -506,7 +720,10 @@ public final class Server {
                     .getOnlinePlayerByUuid(UUID.fromString(player.getUuid()));
             if (target != null) closeUi(target);
         }
-        @Override public void openPage(PlayerId player, String page, boolean replacing) { log("open", page); }
+        @Override public void openPage(PlayerId player, String page, boolean replacing) {
+            log("open", page);
+            switchPage(player, page);
+        }
         @Override public void teleport(PlayerId player, String destination) { log("teleport", destination); }
         @Override public boolean hasPermission(PlayerId player, String permission) { return true; }
         @Override public void scheduleTicks(long ticks, kotlin.jvm.functions.Function0<kotlin.Unit> task) {
@@ -515,7 +732,10 @@ public final class Server {
                     .delay(TaskSchedule.tick((int) ticks))
                     .schedule();
         }
-        @Override public String resolvePlaceholders(PlayerId player, String text) { return text; }
+        @Override public String resolvePlaceholders(PlayerId player, String text) {
+            return dev.shadr.core.page.PlaceholderScanner.INSTANCE.apply(
+                    text, player, placeholdersFor(player));
+        }
 
         private static void log(String verb, String argument) {
             System.out.println("[shadr] action " + verb + (argument.isEmpty() ? "" : ": " + argument));
@@ -594,41 +814,85 @@ public final class Server {
         return ids;
     }
 
+    private static final VideoBakeCache VIDEO_BAKE_CACHE =
+            new VideoBakeCache(Path.of("out", "video-cache").toFile());
+
+    private static final java.util.Set<String> pendingBakes =
+            java.util.Collections.synchronizedSet(new java.util.LinkedHashSet<>());
+
+    static void requestBake(String id) {
+        final String key = id.toLowerCase(java.util.Locale.ROOT);
+        VIDEO_BAKE_CACHE.forget(key);
+        pendingBakes.add(key);
+    }
+
+    static void forgetBake(String id) {
+        VIDEO_BAKE_CACHE.forget(id.toLowerCase(java.util.Locale.ROOT));
+    }
+
     private static java.util.List<dev.shadr.pack.VideoAssets.Source> videoSources() {
         final java.io.File contents = REPO_ROOT.resolve("contents").toFile();
         final java.io.File dir = new java.io.File(contents, dev.shadr.pack.VideoLibrary.FOLDER);
 
-        final StringBuilder key = new StringBuilder();
         final java.io.File[] entries = dir.listFiles();
-        if (entries != null) {
-            java.util.Arrays.sort(entries, java.util.Comparator.comparing(java.io.File::getName));
-            for (java.io.File file : entries) {
-                key.append(file.getName()).append(':')
-                        .append(file.length()).append(':')
-                        .append(file.lastModified()).append(';');
+        if (entries == null) return List.of();
+        java.util.Arrays.sort(entries, java.util.Comparator.comparing(java.io.File::getName));
+
+        final List<dev.shadr.pack.VideoAssets.Source> sources = new java.util.ArrayList<>();
+        final java.util.Map<String, java.io.File> byId = new java.util.LinkedHashMap<>();
+        final List<String> unbaked = new java.util.ArrayList<>();
+
+        for (java.io.File entry : entries) {
+            final String id = nameWithoutExtension(entry.getName()).toLowerCase(java.util.Locale.ROOT);
+            byId.put(id, entry);
+            if (pendingBakes.contains(id)) continue;
+            final dev.shadr.pack.VideoAssets.Source cached = VIDEO_BAKE_CACHE.load(id, entry);
+            if (cached != null) {
+                sources.add(cached);
+            } else {
+                unbaked.add(id);
             }
         }
-        final java.util.Set<String> streamed = streamedClipIds();
-        key.append("|streamed=").append(new java.util.TreeSet<>(streamed));
-        if (key.toString().equals(videoCacheKey)) {
-            return VIDEO_CACHE;
+
+        final java.util.Set<String> wanted;
+        synchronized (pendingBakes) {
+            wanted = new java.util.LinkedHashSet<>(pendingBakes);
+            pendingBakes.clear();
+        }
+        wanted.retainAll(byId.keySet());
+
+        if (!wanted.isEmpty()) {
+            System.out.println("[shadr] baking " + wanted);
+            final dev.shadr.pack.VideoImport importer = new dev.shadr.pack.VideoImport(
+                    "ffmpeg", "ffprobe", line -> {
+                        System.out.println("[shadr] " + line);
+                        return kotlin.Unit.INSTANCE;
+                    });
+            final dev.shadr.pack.VideoLibrary.Result result =
+                    new dev.shadr.pack.VideoLibrary(
+                            contents, importer, 30.0, 3.0, 24,
+                            dev.shadr.core.video.VideoBudget.MAX_HEIGHT,
+                            streamedClipIds(), wanted).load();
+            for (String issue : result.getIssues()) {
+                System.out.println("[shadr] video: " + issue);
+            }
+            for (dev.shadr.pack.VideoAssets.Source baked : result.getSources()) {
+                final String id = baked.getClip().getId().toLowerCase(java.util.Locale.ROOT);
+                final java.io.File source = byId.get(id);
+                if (source != null) VIDEO_BAKE_CACHE.store(id, source, baked);
+                sources.add(baked);
+            }
         }
 
-        final dev.shadr.pack.VideoImport importer = new dev.shadr.pack.VideoImport(
-                "ffmpeg", "ffprobe", line -> {
-                    System.out.println("[shadr] " + line);
-                    return kotlin.Unit.INSTANCE;
-                });
-        final dev.shadr.pack.VideoLibrary.Result result =
-                new dev.shadr.pack.VideoLibrary(
-                        contents, importer, 30.0, 3.0, 24,
-                        dev.shadr.core.video.VideoBudget.MAX_HEIGHT, streamed).load();
-        for (String issue : result.getIssues()) {
-            System.out.println("[shadr] video: " + issue);
+        if (!unbaked.isEmpty()) {
+            System.out.println("[shadr] not baked (upload through the editor to encode): " + unbaked);
         }
-        videoCacheKey = key.toString();
-        VIDEO_CACHE = result.getSources();
-        return VIDEO_CACHE;
+        return sources;
+    }
+
+    private static String nameWithoutExtension(String name) {
+        final int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(0, dot);
     }
 
     private static boolean rebuildPack() {
@@ -642,7 +906,8 @@ public final class Server {
                         SHADERS.load(),
                         ENVIRONMENT.all(),
                         videoSources(),
-                        STREAM)
+                        STREAM,
+                        true)
                         .build(PACK_DIR.toFile(), true);
                 lastAtlas = new dev.shadr.pack.UiImageAtlas(
                         REPO_ROOT.resolve("assets/shadr/contents").toFile(),

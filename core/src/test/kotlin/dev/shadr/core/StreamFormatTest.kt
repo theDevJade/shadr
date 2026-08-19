@@ -143,8 +143,8 @@ class StreamFormatTest {
 
     @Test
     fun `mode flags are independent bits on both sides`() {
-        val hud = java.io.File("../shaders/overlays/mc_26_2/include/hud.glsl").readText()
-        val fragment = java.io.File("../shaders/overlays/mc_26_2/include/hud_fragment.glsl").readText()
+        val hud = java.io.File("../shaders/overlays/_shared/include/hud.glsl").readText()
+        val fragment = java.io.File("../shaders/overlays/_shared/include/hud_fragment.glsl").readText()
 
         assertTrue(hud.contains("#define SHADR_MODE_STREAM 8.0"))
         assertTrue(fragment.contains("bool shadr_has_mode(float bit)"))

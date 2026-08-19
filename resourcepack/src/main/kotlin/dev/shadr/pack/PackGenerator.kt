@@ -21,6 +21,7 @@ class PackGenerator(
     private val environment: Map<dev.shadr.core.shader.EnvironmentEffect, Boolean>,
     private val videos: List<VideoAssets.Source> = emptyList(),
     private val stream: dev.shadr.core.stream.StreamGeometry? = null,
+    private val hideAnvilScreen: Boolean = true,
 ) {
     val overrides = mutableListOf<String>()
 
@@ -55,6 +56,7 @@ class PackGenerator(
         writeSounds(outRoot)
         writeOptifineColors(outRoot)
         writeShaderOverlays(outRoot)
+        if (hideAnvilScreen) writeHiddenAnvil(outRoot)
         return outRoot
     }
 
@@ -166,7 +168,14 @@ class PackGenerator(
             }
             val assets = File(root, "${overlay.directory}/assets/minecraft")
             val target = File(assets, "shaders")
+            val shared = File(overlaysDir, PackOverlay.SHARED_DIRECTORY)
+            if (shared.isDirectory) copyTree(shared, assets)
             copyTree(source, assets)
+            write(
+                root,
+                "${overlay.directory}/assets/minecraft/shaders/include/${PackOverlay.PROFILE_INCLUDE}",
+                overlay.profileGlsl(),
+            )
 
             for (dir in listOf("all", overlay.sourceDirectory)) {
                 val custom = File(File(shaderSrc, "custom"), dir)
@@ -178,7 +187,7 @@ class PackGenerator(
                 copyTree(custom, assets)
             }
 
-            val itemProgram = File(target, "core/item.fsh")
+            val itemProgram = File(target, overlay.itemProgram)
             if (itemProgram.isFile) {
                 write(
                     root,
@@ -307,7 +316,7 @@ class PackGenerator(
                 overlay = overlay,
                 feature = "custom item shaders (${shaders.shaders.size}: " +
                     shaders.shaders.joinToString { it.id } + ")",
-                missing = listOf("core/item.fsh"),
+                missing = listOf(overlay.itemProgram),
                 consequence = "'type: shader' elements and world shader displays draw nothing " +
                     "for these clients",
             )
@@ -317,7 +326,7 @@ class PackGenerator(
             gaps += Gap(
                 overlay = overlay,
                 feature = "SDF shapes (--shapes)",
-                missing = listOf("core/item.fsh"),
+                missing = listOf(overlay.itemProgram),
                 consequence = "'block_sdf' draws nothing for these clients; the glyph path " +
                     "('block_rounded') still works",
             )
@@ -357,6 +366,15 @@ class PackGenerator(
         } else {
             File(File(assets, "shaders"), rel)
         }
+
+    private fun writeHiddenAnvil(root: File) {
+        val blank = PackBuilder.transparentPixelPng()
+        for (rel in PackBuilder.ANVIL_HIDE_FILES) {
+            val file = File(root, rel)
+            file.parentFile.mkdirs()
+            file.writeBytes(blank)
+        }
+    }
 
     private fun write(root: File, rel: String, text: String) {
         val file = File(root, rel)

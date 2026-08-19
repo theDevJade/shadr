@@ -14,11 +14,15 @@ class EnvironmentSource(private val shaderRoot: File) {
     private fun defaultFile(relative: String) =
         File(File(shaderRoot, "overlays/$DEFAULT_OVERLAY"), relative)
 
+    private fun sharedFile(relative: String) =
+        File(File(shaderRoot, "overlays/$SHARED_OVERLAY"), relative)
+
     fun isCustomised(relative: String): Boolean = customFile(relative).isFile
 
     fun read(relative: String): String? {
         customFile(relative).takeIf { it.isFile }?.let { return it.readText() }
-        return defaultFile(relative).takeIf { it.isFile }?.readText()
+        defaultFile(relative).takeIf { it.isFile }?.let { return it.readText() }
+        return sharedFile(relative).takeIf { it.isFile }?.readText()
     }
 
     fun write(relative: String, source: String): File =
@@ -33,5 +37,7 @@ class EnvironmentSource(private val shaderRoot: File) {
 
     companion object {
         const val DEFAULT_OVERLAY = "mc_26_2"
+
+        const val SHARED_OVERLAY = "_shared"
     }
 }

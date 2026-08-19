@@ -19,8 +19,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Install glslangValidator
+        run: sudo apt-get update && sudo apt-get install -y glslang-tools
+
       - name: Build and test
-        run: ./gradlew build --no-daemon
+        run: ./gradlew build --no-daemon -PallowMissingNms
 
       - name: Generate the resource pack
         run: >
@@ -48,7 +51,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build the jars the integrations compile against
-        run: ./gradlew :core:jar :platform-paper:jar --no-daemon
+        run: ./gradlew :core:jar :platform-paper:jar --no-daemon -PallowMissingNms
 
       - name: Skript
         run: ./gradlew build --no-daemon

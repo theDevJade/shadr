@@ -4,6 +4,8 @@
  * Licensed under the Apache License, Version 2.0. See LICENSE.
  * SPDX-License-Identifier: Apache-2.0
  */
+#moj_import <shadr_profile.glsl>
+
 #define X 1
 #define Y 1
 #define refRes vec2(1920.0, 1080.0)
@@ -56,7 +58,11 @@ bool make_hud() {
 
         pos.xy /= refRes * vec2(X, Y) / 2.0;
         pos.x += offset;
+#if SHADR_REVERSED_DEPTH
         pos.z = 0.95 - (pos.z / 100000000.0);
+#else
+        pos.z /= 1000000.0;
+#endif
 
         gl_Position = vec4(pos, 1.0);
         return true;

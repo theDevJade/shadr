@@ -12,6 +12,10 @@ import org.bukkit.entity.Player;
 
 public interface PacketBackend {
 
+    default EntitySlots slots() {
+        return EntitySlots.DEFAULT;
+    }
+
     int nextEntityId(Player viewer);
 
     default void spawn(Player viewer, int entityId, FakeEntityKind kind, Location at) {

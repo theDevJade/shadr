@@ -166,10 +166,20 @@ class ShippedContentTest {
 
         val loader = loader()
         val components = loader.loadComponents()
+        val inputsByPage = mutableMapOf<String, Set<String>>()
         for (file in pageFiles()) {
             val page = loader.loadPage(file, components) ?: continue
+            inputsByPage[file.name] = page.elements
+                .filter { it.type == dev.shadr.core.page.ElementType.TEXT_INPUT }
+                .map { dev.shadr.core.page.InputPlaceholders.PREFIX + it.id.lowercase() }
+                .toSet()
             for (element in page.elements) {
-                val sources = listOf(element.text) + element.dynamic.values
+                val sources = listOf(element.text) +
+                    element.dynamic.values +
+                    element.interaction.onClick.map { it.argument } +
+                    element.interaction.onLeftClick.map { it.argument } +
+                    element.interaction.onRightClick.map { it.argument } +
+                    element.input?.onSubmit.orEmpty().map { it.argument }
                 for (source in sources) {
                     Regex("""%([A-Za-z0-9_:.\-]+)%""").findAll(source).forEach { match ->
                         used.getOrPut(match.groupValues[1].lowercase()) { mutableSetOf() } += file.name
@@ -178,10 +188,14 @@ class ShippedContentTest {
             }
         }
 
-        val unknown = used.filterKeys { it !in known }
+        val unknown = used.filterKeys { it !in known }.filterNot { (name, pages) ->
+            name.startsWith(dev.shadr.core.page.InputPlaceholders.PREFIX) &&
+                pages.all { name in inputsByPage[it].orEmpty() }
+        }
         assertTrue(
             unknown.isEmpty(),
-            "these placeholders would render as literal text on a bare server: " +
+            "these placeholders would render as literal text on a bare server " +
+                "(an %input_x% must name a text_input on the same page): " +
                 unknown.entries.joinToString { "%${it.key}% in ${it.value}" },
         )
     }

@@ -482,6 +482,7 @@ class VideoLibrary @JvmOverloads constructor(
     private val quality: Int = MosaicEncoder.Options().quality,
     private val maxHeight: Int = VideoBudget.MAX_HEIGHT,
     private val streamedIds: Set<String> = emptySet(),
+    private val only: Set<String> = emptySet(),
 ) {
     data class Result(val sources: List<VideoAssets.Source>, val issues: List<String>)
 
@@ -499,6 +500,7 @@ class VideoLibrary @JvmOverloads constructor(
 
         for (entry in entries) {
             val id = entry.nameWithoutExtension.lowercase()
+            if (only.isNotEmpty() && id !in only) continue
             val result = importer.import(
                 VideoImport.Request(
                     id = id,

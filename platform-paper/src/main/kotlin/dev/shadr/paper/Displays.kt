@@ -15,6 +15,7 @@ import dev.shadr.core.spi.BillboardMode
 import dev.shadr.core.spi.CameraControl
 import dev.shadr.core.spi.HudSink
 import dev.shadr.core.spi.WorldShaderSpec
+import dev.shadr.paper.nms.EntitySlots
 import dev.shadr.paper.nms.FakeEntityKind
 import dev.shadr.paper.nms.MetaValue
 import dev.shadr.paper.nms.PacketBackend
@@ -46,10 +47,6 @@ interface ShadrCamera : CameraControl {
 }
 
 object Displays {
-    const val ENTITY_FLAGS = 0
-
-    const val FLAG_INVISIBLE: Byte = 0x20
-
     const val HUD_VIEW_RANGE = 64f
 
     fun backendOrNull(log: (String) -> Unit): PacketBackend? = runCatching { PacketBackends.load() }
@@ -68,63 +65,63 @@ object Displays {
         BillboardMode.CENTER -> 3
     }
 
-    fun metaFor(draw: HudDraw): List<MetaValue> {
+    fun metaFor(draw: HudDraw, slots: EntitySlots): List<MetaValue> {
         val values = mutableListOf(
-            MetaValue.of(DisplayMeta.INTERPOLATION_DELAY, draw.interpolationDelay),
-            MetaValue.of(DisplayMeta.INTERPOLATION_DURATION, draw.interpolationDuration),
+            MetaValue.of(slots.interpolationDelay(), draw.interpolationDelay),
+            MetaValue.of(slots.interpolationDuration(), draw.interpolationDuration),
             MetaValue.vector3(
-                DisplayMeta.TRANSLATION,
+                slots.translation(),
                 draw.translation.x.toFloat(),
                 draw.translation.y.toFloat(),
                 draw.translation.z.toFloat(),
             ),
             MetaValue.vector3(
-                DisplayMeta.SCALE,
+                slots.scale(),
                 draw.scale.x.toFloat(),
                 draw.scale.y.toFloat(),
                 draw.scale.z.toFloat(),
             ),
-            MetaValue.quaternion(DisplayMeta.LEFT_ROTATION, 0f, 1f, 0f, 0f),
-            rightRotation(draw.rotationDeg),
-            MetaValue.of(DisplayMeta.BILLBOARD, DisplayMeta.BILLBOARD_FIXED),
-            MetaValue.of(DisplayMeta.BRIGHTNESS, DisplayMeta.BRIGHTNESS_FULL),
-            MetaValue.of(DisplayMeta.VIEW_RANGE, HUD_VIEW_RANGE),
+            MetaValue.quaternion(slots.leftRotation(), 0f, 1f, 0f, 0f),
+            rightRotation(draw.rotationDeg, slots),
+            MetaValue.of(slots.billboard(), slots.billboardFixed()),
+            MetaValue.of(slots.brightness(), slots.brightnessFull()),
+            MetaValue.of(slots.viewRange(), HUD_VIEW_RANGE),
         )
 
         when (draw.kind) {
             HudDraw.Kind.TEXT -> {
-                values += MetaValue.text(DisplayMeta.TEXT, MiniMessageText.parse(draw.displayText))
-                values += MetaValue.of(DisplayMeta.LINE_WIDTH, draw.lineWidth)
-                values += MetaValue.of(DisplayMeta.BACKGROUND_COLOR, DisplayMeta.TEXT_BACKGROUND_TRANSPARENT)
-                values += MetaValue.of(DisplayMeta.TEXT_OPACITY, draw.opacity.coerceIn(1, 255).toByte())
-                values += MetaValue.of(DisplayMeta.TEXT_FLAGS, draw.textFlags)
+                values += MetaValue.text(slots.text(), MiniMessageText.parse(draw.displayText))
+                values += MetaValue.of(slots.lineWidth(), draw.lineWidth)
+                values += MetaValue.of(slots.backgroundColor(), DisplayMeta.TEXT_BACKGROUND_TRANSPARENT)
+                values += MetaValue.of(slots.textOpacity(), draw.opacity.coerceIn(1, 255).toByte())
+                values += MetaValue.of(slots.textFlags(), draw.textFlags)
             }
-            HudDraw.Kind.ITEM -> hudItem(draw)?.let { values += MetaValue.item(DisplayMeta.ITEM, it) }
+            HudDraw.Kind.ITEM -> hudItem(draw)?.let { values += MetaValue.item(slots.item(), it) }
         }
         return values
     }
 
-    fun metaFor(spec: WorldShaderSpec): List<MetaValue> {
+    fun metaFor(spec: WorldShaderSpec, slots: EntitySlots): List<MetaValue> {
         val scale = spec.scale.toFloat()
         return listOf(
-            MetaValue.of(DisplayMeta.INTERPOLATION_DELAY, 0),
-            MetaValue.of(DisplayMeta.INTERPOLATION_DURATION, 0),
-            MetaValue.vector3(DisplayMeta.TRANSLATION, 0f, 0f, 0f),
-            MetaValue.vector3(DisplayMeta.SCALE, scale, scale, scale),
-            MetaValue.quaternion(DisplayMeta.LEFT_ROTATION, 0f, 0f, 0f, 1f),
-            MetaValue.quaternion(DisplayMeta.RIGHT_ROTATION, 0f, 0f, 0f, 1f),
-            MetaValue.of(DisplayMeta.BILLBOARD, billboardOf(spec.billboard)),
-            MetaValue.of(DisplayMeta.BRIGHTNESS, DisplayMeta.BRIGHTNESS_FULL),
-            MetaValue.of(DisplayMeta.VIEW_RANGE, spec.viewRange ?: 1f),
-            MetaValue.item(DisplayMeta.ITEM, shaderItem(spec)),
+            MetaValue.of(slots.interpolationDelay(), 0),
+            MetaValue.of(slots.interpolationDuration(), 0),
+            MetaValue.vector3(slots.translation(), 0f, 0f, 0f),
+            MetaValue.vector3(slots.scale(), scale, scale, scale),
+            MetaValue.quaternion(slots.leftRotation(), 0f, 0f, 0f, 1f),
+            MetaValue.quaternion(slots.rightRotation(), 0f, 0f, 0f, 1f),
+            MetaValue.of(slots.billboard(), billboardOf(spec.billboard)),
+            MetaValue.of(slots.brightness(), slots.brightnessFull()),
+            MetaValue.of(slots.viewRange(), spec.viewRange ?: 1f),
+            MetaValue.item(slots.item(), shaderItem(spec)),
         )
     }
 
-    fun rightRotation(degrees: Double): MetaValue {
-        if (degrees == 0.0) return MetaValue.quaternion(DisplayMeta.RIGHT_ROTATION, 0f, 0f, 0f, 1f)
+    fun rightRotation(degrees: Double, slots: EntitySlots): MetaValue {
+        if (degrees == 0.0) return MetaValue.quaternion(slots.rightRotation(), 0f, 0f, 0f, 1f)
         val half = Math.toRadians(degrees) / 2.0
         return MetaValue.quaternion(
-            DisplayMeta.RIGHT_ROTATION,
+            slots.rightRotation(),
             0f,
             0f,
             Math.sin(half).toFloat(),

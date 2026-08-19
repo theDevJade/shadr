@@ -7,9 +7,6 @@ plugins {
 data class Backend(val devBundle: String, val java: Int)
 
 val backends = mapOf(
-    "v1_21_1" to Backend("1.21.1-R0.1-SNAPSHOT", 21),
-    "v1_21_4" to Backend("1.21.4-R0.1-SNAPSHOT", 21),
-    "v1_21_5" to Backend("1.21.5-R0.1-SNAPSHOT", 21),
     "v1_21_8" to Backend("1.21.8-R0.1-SNAPSHOT", 21),
     "v1_21_11" to Backend("1.21.11-R0.1-SNAPSHOT", 21),
     "v26_1" to Backend("26.1.1.build.16-alpha", 25),

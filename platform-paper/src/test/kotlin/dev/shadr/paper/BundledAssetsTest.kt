@@ -68,11 +68,18 @@ class BundledAssetsTest {
             .map { it.removePrefix("shaders/overlays/").substringBefore('/') }
             .toSet()
 
-        for (version in listOf("mc_26_2", "mc_26_1", "mc_1_21_x", "mc_1_21_5", "mc_1_21_4", "mc_1_21_1")) {
+        for (version in listOf("mc_26_2", "mc_26_1", "mc_1_21_x")) {
             assertTrue(
                 version in overlays,
                 "shaders/overlays/$version is not bundled, so a dropped-in jar cannot build a " +
                     "pack for those clients. Bundled: $overlays",
+            )
+        }
+        for (include in listOf("hud.glsl", "hud_fragment.glsl", "hud_shape.glsl")) {
+            assertTrue(
+                entries.any { it == "shaders/overlays/_shared/include/$include" },
+                "the shared shader base is not bundled, so a dropped-in jar would build every " +
+                    "overlay without $include and render no HUD at all on any version",
             )
         }
         assertTrue(

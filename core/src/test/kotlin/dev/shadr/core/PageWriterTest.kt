@@ -154,7 +154,7 @@ class PageWriterTest {
     }
 
     @Test
-    fun `component-derived elements are refused with a reason`() {
+    fun `moving a component-derived element writes the move onto the instance`() {
         val dir = createTempDirectory("shadr-writer-component").toFile()
         val pages = File(dir, "pages").apply { mkdirs() }
         val components = File(dir, "components").apply { mkdirs() }
@@ -189,9 +189,13 @@ class PageWriterTest {
         val moved = original.elements.map { it.copy(x = 999.0) }
         val result = PageWriter().save(file, original, original.copy(elements = moved))
 
-        assertEquals(0, result.saved)
-        assertTrue(result.skipped.values.any { it.contains("component") }, "reason was ${result.skipped}")
-        assertEquals(before, file.readText(), "refused save still modified the file")
+        assertTrue(result.ok, "moving a component was refused: ${result.skipped}")
+        assertEquals(1, result.saved, "the instance should be written once")
+        assertTrue(before != file.readText(), "the move was not written at all")
+        assertEquals(
+            999.0, loader.loadPage(file)!!.elements.single().x,
+            "the component instance did not end up where it was dragged",
+        )
     }
 
     @Test

@@ -8,6 +8,8 @@ package dev.shadr.paper
 
 import dev.shadr.core.PlayerId
 import dev.shadr.core.action.ActionHost
+import dev.shadr.core.page.PlaceholderResolver
+import dev.shadr.core.page.PlaceholderScanner
 import org.bukkit.Bukkit
 import org.bukkit.plugin.Plugin
 import java.util.UUID
@@ -16,6 +18,7 @@ class PaperActionHost(
     private val plugin: Plugin,
     private val openPageHandler: (PlayerId, String, Boolean) -> Unit,
     private val closePageHandler: (PlayerId) -> Unit,
+    private val placeholders: (PlayerId) -> PlaceholderResolver = { PlaceholderResolver.NONE },
 ) : ActionHost {
     override fun runAsPlayer(player: PlayerId, command: String) {
         val bukkit = player.bukkit() ?: return
@@ -64,6 +67,9 @@ class PaperActionHost(
 
     override fun hasPermission(player: PlayerId, permission: String): Boolean =
         player.bukkit()?.hasPermission(permission) == true
+
+    override fun resolvePlaceholders(player: PlayerId, text: String): String =
+        PlaceholderScanner.apply(text, player, placeholders(player))
 
     override fun scheduleTicks(ticks: Long, task: () -> Unit) {
         Bukkit.getScheduler().runTaskLater(plugin, Runnable { task() }, ticks)

@@ -208,6 +208,9 @@ class _LayerRow extends StatelessWidget {
 
   static const _icons = <String, IconData>{
     'TEXT': Icons.text_fields,
+    'TEXT_INPUT': Icons.edit_note,
+    'TOGGLE': Icons.toggle_on,
+    'SLIDER': Icons.tune,
     'HITBOX': Icons.crop_free,
     'BLOCK_ROUNDED': Icons.rounded_corner,
     'BLOCK_SDF': Icons.rounded_corner,

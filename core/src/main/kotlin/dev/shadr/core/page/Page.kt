@@ -35,7 +35,10 @@ data class ScreenDef(
     val cursorSpeed: Double = 1.0,
     val cursorUnicode: String = Glyphs.CURSOR.toString(),
     val cursorLayer: Double = 9700.0,
-)
+    val hud: Boolean = false,
+) {
+    val locksCamera: Boolean get() = !hud
+}
 
 @Serializable
 enum class ElementType(val id: String, val defaultGlyph: Char = Glyphs.BACKGROUND) {
@@ -65,6 +68,12 @@ enum class ElementType(val id: String, val defaultGlyph: Char = Glyphs.BACKGROUN
 
     HITBOX("hitbox"),
 
+    TEXT_INPUT("text_input"),
+
+    TOGGLE("toggle"),
+
+    SLIDER("slider"),
+
     COMPONENT("component"),
 
     GRID("grid_block");
@@ -77,9 +86,14 @@ enum class ElementType(val id: String, val defaultGlyph: Char = Glyphs.BACKGROUN
         }
 
     val supportsRounding: Boolean
-        get() = this == BLOCK || this == BLOCK_ROUNDED || this == BLOCK_SDF
+        get() = this == BLOCK || this == BLOCK_ROUNDED || this == BLOCK_SDF ||
+            this == TEXT_INPUT || this == TOGGLE || this == SLIDER
 
-    val roundedByDefault: Boolean get() = this == BLOCK_ROUNDED || this == BLOCK_SDF
+    val roundedByDefault: Boolean
+        get() = this == BLOCK_ROUNDED || this == BLOCK_SDF || this == TEXT_INPUT ||
+            this == TOGGLE || this == SLIDER
+
+    val isControl: Boolean get() = this == TEXT_INPUT || this == TOGGLE || this == SLIDER
 
     val isTextual: Boolean get() = this == TEXT
 
@@ -124,11 +138,110 @@ data class Element(
     val originX: Double = 0.0,
     val originY: Double = 0.0,
     val componentName: String? = null,
+    val input: TextInput? = null,
+    val toggle: Toggle? = null,
+    val slider: Slider? = null,
 ) {
     val isBlockish: Boolean get() = !type.isTextual && type != ElementType.ITEM
 
     val centerX: Double get() = x + width / 2.0
     val centerY: Double get() = y + height / 2.0
+}
+
+@Serializable
+data class TextInput(
+    val placeholder: String = "",
+    val value: String = "",
+    val maxLength: Int = DEFAULT_MAX_LENGTH,
+    val lines: Int = 1,
+    val secret: Boolean = false,
+    val textColor: Rgb? = null,
+    val placeholderColor: Rgb? = null,
+    val focusEffect: String? = null,
+    val hoverOutline: Rgb? = null,
+    val focusOutline: Rgb? = null,
+    val fontSize: Double = 32.0,
+    val padding: Double = 10.0,
+    val onSubmit: List<ActionSpec> = emptyList(),
+) {
+    val clampedLines: Int get() = lines.coerceIn(1, SIGN_LINES)
+
+    fun clamp(raw: String): String = raw.take(maxLength.coerceIn(1, HARD_MAX_LENGTH))
+
+    fun outlineFor(base: Rgb, hovered: Boolean, focused: Boolean): Rgb = when {
+        focused -> focusOutline ?: lift(base, FOCUS_LIFT)
+        hovered -> hoverOutline ?: lift(base, HOVER_LIFT)
+        else -> base
+    }
+
+    fun display(current: String): String = when {
+        current.isEmpty() -> placeholder
+        secret -> "\u2022".repeat(current.length)
+        else -> current
+    }
+
+    companion object {
+        const val HOVER_LIFT = 0.35
+
+        const val FOCUS_LIFT = 0.6
+
+        private fun lift(colour: Rgb, amount: Double): Rgb {
+            fun channel(value: Int) = (value + (255 - value) * amount).toInt().coerceIn(0, 255)
+            return Rgb((channel(colour.r) shl 16) or (channel(colour.g) shl 8) or channel(colour.b))
+        }
+
+        const val SIGN_LINES = 4
+
+        const val DEFAULT_MAX_LENGTH = 60
+
+        const val HARD_MAX_LENGTH = 384
+    }
+}
+
+@Serializable
+data class Toggle(
+    val value: Boolean = false,
+    val onColor: Rgb = Rgb(0x4C8DFF),
+    val offColor: Rgb = Rgb(0x3A3A47),
+    val knobColor: Rgb = Rgb(0xF2F2F7),
+    val onChange: List<ActionSpec> = emptyList(),
+) {
+    fun knobFraction(on: Boolean): Double = if (on) 1.0 else 0.0
+
+    fun trackColor(on: Boolean): Rgb = if (on) onColor else offColor
+}
+
+@Serializable
+data class Slider(
+    val value: Double = 0.0,
+    val min: Double = 0.0,
+    val max: Double = 100.0,
+    val step: Double = 0.0,
+    val trackColor: Rgb = Rgb(0x3A3A47),
+    val fillColor: Rgb = Rgb(0x4C8DFF),
+    val knobColor: Rgb = Rgb(0xF2F2F7),
+    val onChange: List<ActionSpec> = emptyList(),
+) {
+    private val span: Double get() = (max - min).takeIf { it > 0.0 } ?: 1.0
+
+    fun clamp(raw: Double): Double {
+        val bounded = raw.coerceIn(minOf(min, max), maxOf(min, max))
+        if (step <= 0.0) return bounded
+        return (min + Math.round((bounded - min) / step) * step).coerceIn(minOf(min, max), maxOf(min, max))
+    }
+
+    fun fractionOf(value: Double): Double = ((clamp(value) - min) / span).coerceIn(0.0, 1.0)
+
+    fun valueAt(fraction: Double): Double = clamp(min + fraction.coerceIn(0.0, 1.0) * span)
+
+    fun format(value: Double): String {
+        val clamped = clamp(value)
+        return if (step > 0.0 && step % 1.0 == 0.0 || clamped % 1.0 == 0.0) {
+            clamped.toLong().toString()
+        } else {
+            "%.2f".format(clamped)
+        }
+    }
 }
 
 @Serializable

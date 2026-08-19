@@ -5,17 +5,11 @@ screen:
   offsetX: 0
   offsetY: 0
   cursorSize: 10
-  # Yaw covers the full screen WIDTH over 360 degrees, but pitch covers the full HEIGHT
-  # over only 180, so horizontal is inherently half as responsive as vertical, and
-  # cursorSpeed (which scales the yaw axis) needs 2.0 just to make the two axes match.
-  # Raise further to taste; this is the knob, per page.
   cursorSpeed: 2.0
   cursorLayer: 9700
 
 blocks:
-  - # Numeric values accept arithmetic, which is how a layout stays readable when it is
-    # expressed relative to the screen, not in absolute pixels.
-    type: block
+  - type: block
     id: backdrop
     layer: 0.0
     color: 08080b

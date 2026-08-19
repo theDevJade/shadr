@@ -157,7 +157,7 @@ class ShapeAssetsTest {
 
     @Test
     fun `the GLSL grid constant matches the generator`() {
-        val glsl = File("../shaders/overlays/mc_26_2/include/hud_shape.glsl")
+        val glsl = File("../shaders/overlays/${PackOverlay.SHARED_DIRECTORY}/include/hud_shape.glsl")
         check(glsl.isFile) { "expected the shape include at ${glsl.absolutePath}" }
         val declared = Regex("#define\\s+SHADR_SHAPE_GRID\\s+([0-9.]+)")
             .find(glsl.readText())?.groupValues?.get(1)?.toDouble()

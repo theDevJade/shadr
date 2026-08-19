@@ -16,15 +16,19 @@ import kotlin.test.assertTrue
 
 class PostChainTest {
     private val overlay = File("../shaders/overlays/mc_26_2").canonicalFile
-    private val chainFile = File(overlay, "post_effect/creeper.json")
-    private val postInclude = File(overlay, "include/shadr_post.glsl")
+    private val shared = File("../shaders/overlays/_shared").canonicalFile
+    private val chainFile = File(shared, "post_effect/creeper.json")
+
+    private fun asset(relative: String): File =
+        File(overlay, relative).takeIf { it.isFile } ?: File(shared, relative)
+    private val postInclude = File(shared, "include/shadr_post.glsl")
 
     @Test
     fun `hud_glsl recognises the blur panel at the translation the renderer gives it`() {
         val translationZ = -HudPositionCalculator.BLUR_PANEL_LAYER *
             HudPositionCalculator.LEGACY_LAYER_Z_PIXEL_MULTIPLIER
 
-        val hud = File(overlay, "include/hud.glsl").readText()
+        val hud = File(shared, "include/hud.glsl").readText()
         val declared = Regex("""#define\s+SHADR_BLUR_PANEL_Z\s+([0-9.]+)""")
             .find(hud)?.groupValues?.get(1)?.toDouble()
 
@@ -36,8 +40,8 @@ class PostChainTest {
 
     @Test
     fun `the vertex stage tags the panel and the fragment stage reads that tag`() {
-        val hud = File(overlay, "include/hud.glsl").readText()
-        val fragment = File(overlay, "include/hud_fragment.glsl").readText()
+        val hud = File(shared, "include/hud.glsl").readText()
+        val fragment = File(shared, "include/hud_fragment.glsl").readText()
 
         assertTrue(
             hud.contains("shadrMode += SHADR_MODE_BLUR"),
@@ -63,11 +67,11 @@ class PostChainTest {
 
     @Test
     fun `the core shaders and the post chain agree on the key colour`() {
-        fun keyIn(file: String): String? = Regex("""#define\s+SHADR_BLUR_KEY\s+(vec3\([^)]*\))""")
-            .find(File(overlay, file).readText())?.groupValues?.get(1)?.replace(" ", "")
+        fun keyIn(root: File, file: String): String? = Regex("""#define\s+SHADR_BLUR_KEY\s+(vec3\([^)]*\))""")
+            .find(File(root, file).readText())?.groupValues?.get(1)?.replace(" ", "")
 
-        val core = keyIn("include/hud_fragment.glsl")
-        val post = keyIn("include/shadr_post.glsl")
+        val core = keyIn(shared, "include/hud_fragment.glsl")
+        val post = keyIn(shared, "include/shadr_post.glsl")
 
         assertNotNull(core, "hud_fragment.glsl declares no SHADR_BLUR_KEY")
         assertEquals(core, post, "the panel is painted in one colour and looked for in another")
@@ -81,7 +85,7 @@ class PostChainTest {
         )
         for (shader in listOf("post/shadr_blur_extract.fsh", "post/shadr_blur_composite.fsh")) {
             assertTrue(
-                !File(overlay, shader).readText().contains("DepthSampler"),
+                !asset(shader).readText().contains("DepthSampler"),
                 "$shader still samples a depth buffer that is never populated",
             )
         }
@@ -115,7 +119,7 @@ class PostChainTest {
 
     @Test
     fun `hud_glsl still writes the depth base the post pass assumes`() {
-        val hud = File(overlay, "include/hud.glsl").readText()
+        val hud = File(shared, "include/hud.glsl").readText()
         val base = Regex("""pos\.z\s*=\s*([0-9.]+)\s*-""").find(hud)?.groupValues?.get(1)?.toDouble()
         assertEquals(
             HudPositionCalculator.HUD_DEPTH_BASE, base,
@@ -134,7 +138,7 @@ class PostChainTest {
 
         for (id in referenced) {
             val extension = if (id.endsWith("fullscreen")) "vsh" else "fsh"
-            val file = File(overlay, "$id.$extension")
+            val file = asset("$id.$extension")
             assertTrue(file.isFile, "the chain references $id but ${file.path} does not exist")
         }
     }
@@ -158,7 +162,7 @@ class PostChainTest {
             assertTrue(!block.contains("\"name\""), "UniformValue has no name field; it is ignored")
         }
 
-        val shader = File(overlay, "post/shadr_blur_box.fsh").readText()
+        val shader = asset("post/shadr_blur_box.fsh").readText()
         val declared = Regex("""uniform ShadrBlurConfig \{(.*?)}""", RegexOption.DOT_MATCHES_ALL)
             .find(shader)?.groupValues?.get(1)
         assertNotNull(declared, "shadr_blur_box.fsh declares no ShadrBlurConfig block")
@@ -229,7 +233,7 @@ class PostChainTest {
         assertTrue(effect.programs.isNotEmpty())
         for (program in effect.programs) {
             assertTrue(
-                File(overlay, program).isFile,
+                asset(program).isFile,
                 "the blur toggle lists '$program', which does not exist in the overlay",
             )
         }

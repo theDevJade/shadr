@@ -54,13 +54,13 @@ class PacketHudSink(private val backend: PacketBackend) : ShadrHudSink {
             for (draw in diff.spawned) {
                 val id = backend.nextEntityId(bukkit)
                 backend.spawn(bukkit, id, Displays.kindOf(draw), bukkit.location)
-                backend.metadata(bukkit, id, Displays.metaFor(draw))
+                backend.metadata(bukkit, id, Displays.metaFor(draw, backend.slots()))
                 hud.parts[draw.key] = Part(id, draw.kind)
             }
 
             for (draw in diff.updated) {
                 val part = hud.parts[draw.key] ?: continue
-                backend.metadata(bukkit, part.id, Displays.metaFor(draw))
+                backend.metadata(bukkit, part.id, Displays.metaFor(draw, backend.slots()))
             }
 
             if (gone.isNotEmpty() || diff.spawned.isNotEmpty()) sendPassengers(bukkit, hud)

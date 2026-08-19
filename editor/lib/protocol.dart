@@ -213,10 +213,14 @@ class Element {
 
   bool get isBlur => type == 'BLUR';
 
+  bool get isTextInput => type == 'TEXT_INPUT';
+
+  bool get isControl => isTextInput || type == 'TOGGLE' || type == 'SLIDER';
+
   double get effectiveLayer => isBlur ? blurPanelLayer : layer;
 
   bool get supportsRounding =>
-      type == 'BLOCK' || type == 'BLOCK_ROUNDED' || type == 'BLOCK_SDF' || isBlur;
+      type == 'BLOCK' || type == 'BLOCK_ROUNDED' || type == 'BLOCK_SDF' || isBlur || isControl;
 
   bool get isRounded =>
       supportsRounding && (rounding?.resolvedRadius(width, height) ?? 0) > 0;

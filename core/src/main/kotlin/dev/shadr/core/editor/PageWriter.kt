@@ -49,6 +49,8 @@ class PageWriter {
         val skipped = linkedMapOf<String, String>()
         val replaced = mutableListOf<String>()
         val assigned = linkedMapOf<String, String>()
+        val componentMoves =
+            linkedMapOf<String, MutableList<Triple<Element, Element, Map<String, Value>>>>()
         var saved = 0
 
         for (element in edited.elements) {
@@ -61,6 +63,13 @@ class PageWriter {
             }
             val changes = diff(previous, element)
             if (changes.isEmpty()) continue
+
+            if (element.componentName != null) {
+                componentMoves
+                    .getOrPut(instancePathOf(element.sourcePath) ?: "") { mutableListOf() }
+                    .add(Triple(previous, element, changes))
+                continue
+            }
 
             val reason = unaddressableReason(element)
             if (reason != null) {
@@ -80,6 +89,8 @@ class PageWriter {
             saved++
         }
 
+        saved += applyComponentMoves(blocks, componentMoves, skipped, replaced)
+
         val deletedIds = before.keys - edited.elements.map { it.id }.toSet()
         saved += remove(blocks, deletedIds.mapNotNull { before[it] }, skipped)
 
@@ -90,6 +101,65 @@ class PageWriter {
 
         if (saved > 0) file.writeText(serialize(root))
         return SaveResult(saved, skipped, replaced, assigned)
+    }
+
+    private fun applyComponentMoves(
+        blocks: SequenceNode,
+        moves: Map<String, MutableList<Triple<Element, Element, Map<String, Value>>>>,
+        skipped: MutableMap<String, String>,
+        replaced: MutableList<String>,
+    ): Int {
+        var saved = 0
+        for ((instancePath, entries) in moves) {
+            val ids = entries.map { it.second.id }
+            if (instancePath.isBlank()) {
+                ids.forEach { skipped[it] = "component instance has no addressable path" }
+                continue
+            }
+
+            val nonPositional = entries.flatMap { (_, _, changes) ->
+                changes.keys.filterNot { it == "position.x" || it == "position.y" }
+            }.distinct()
+            if (nonPositional.isNotEmpty()) {
+                ids.forEach {
+                    skipped[it] = "only a move can be written back to component " +
+                        "'${entries.first().second.componentName}'; ${nonPositional.joinToString()} " +
+                        "must be changed in the component file"
+                }
+                continue
+            }
+
+            val deltas = entries.map { (from, to, _) -> (to.x - from.x) to (to.y - from.y) }.distinct()
+            if (deltas.size > 1) {
+                ids.forEach {
+                    skipped[it] = "a component's parts cannot move independently; move the whole " +
+                        "'${entries.first().second.componentName}' instead"
+                }
+                continue
+            }
+
+            val node = navigate(blocks, instancePath)
+            if (node !is MappingNode) {
+                ids.forEach { skipped[it] = "component instance no longer at '$instancePath'" }
+                continue
+            }
+
+            val (dx, dy) = deltas.single()
+            if (dx == 0.0 && dy == 0.0) continue
+
+            for ((path, delta) in listOf("position.x" to dx, "position.y" to dy)) {
+                if (delta == 0.0) continue
+                if (replacesExpression(node, path)) replaced += "$instancePath.$path"
+                put(node, path, Value.Num(currentNumber(node, path) + delta))
+            }
+            saved++
+        }
+        return saved
+    }
+
+    private fun currentNumber(node: MappingNode, path: String): Double {
+        val scalar = resolve(node, path) as? ScalarNode ?: return 0.0
+        return scalar.value.trim().toDoubleOrNull() ?: 0.0
     }
 
     private fun writeAnimations(
@@ -368,12 +438,20 @@ class PageWriter {
             put(node, "outline.size", Value.Num(outline.size))
             put(node, "outline.color", Value.Text(outline.color.hex()))
         }
+        element.input?.let { input ->
+            node.put("placeholder", scalar(Value.Text(input.placeholder)))
+            node.put("maxLength", scalar(Value.Num(input.maxLength.toDouble())))
+            if (input.lines != 1) node.put("lines", scalar(Value.Num(input.lines.toDouble())))
+            if (input.secret) node.put("secret", scalar(Value.Text("true")))
+        }
         return node
     }
 
     private fun unaddressableReason(element: Element) = Companion.unaddressableReason(element)
 
     private fun steps(path: String) = Companion.steps(path)
+
+    private fun instancePathOf(path: String) = Companion.instancePathOf(path)
 
     private sealed interface Value {
         data class Num(val value: Double) : Value
@@ -563,6 +641,13 @@ class PageWriter {
     }
 
     companion object {
+        fun instancePathOf(path: String): String? {
+            val segments = path.split('.')
+            val at = segments.indexOfFirst { it.startsWith("component:") }
+            if (at <= 0) return null
+            return segments.take(at).joinToString(".")
+        }
+
         fun unaddressableReason(element: Element): String? {
             if (element.componentName != null) {
                 return "from component '${element.componentName}'"

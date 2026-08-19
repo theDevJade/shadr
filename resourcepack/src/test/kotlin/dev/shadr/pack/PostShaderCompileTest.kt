@@ -15,6 +15,11 @@ class PostShaderCompileTest {
 
     private val overlay = File("../shaders/overlays/mc_26_2").canonicalFile
 
+    private val shared = File("../shaders/overlays/${PackOverlay.SHARED_DIRECTORY}").canonicalFile
+
+    private val overlays: List<File> = PackOverlay.entries
+        .map { File("../shaders/overlays/${it.sourceDirectory}").canonicalFile }
+
     private val globals = """
         layout(std140) uniform Globals {
             ivec3 CameraBlockPos;
@@ -36,11 +41,9 @@ class PostShaderCompileTest {
             dev.shadr.core.stream.StreamCodec.glsl(dev.shadr.core.stream.StreamPresets.CODEC_1080),
     )
 
-    private fun compiler(): Boolean = runCatching {
-        ProcessBuilder("glslangValidator", "-v").redirectErrorStream(true).start().waitFor() == 0
-    }.getOrDefault(false)
+    private fun compiler(): Boolean = GlslCompiler.available()
 
-    private fun resolve(file: File, seen: MutableSet<String> = mutableSetOf()): String =
+    private fun resolve(root: File, file: File, seen: MutableSet<String> = mutableSetOf()): String =
         buildString {
             for (line in file.readLines()) {
                 val match = Regex("""\s*#moj_import\s+<([^>]+)>""").find(line)
@@ -56,7 +59,8 @@ class PostShaderCompileTest {
                     if (name == "globals.glsl") appendLine(globals)
                     continue
                 }
-                val include = File(overlay, "include/$name")
+                val include = File(root, "include/$name").takeIf { it.isFile }
+                    ?: File(shared, "include/$name")
                 if (!include.isFile) {
                     val produced = generated[name]
                     assertTrue(produced != null, "${file.name} imports $name, which does not exist")
@@ -64,53 +68,72 @@ class PostShaderCompileTest {
                     continue
                 }
                 appendLine(
-                    resolve(include, seen).lineSequence()
+                    resolve(root, include, seen).lineSequence()
                         .filterNot { it.trimStart().startsWith("#version") }
                         .joinToString("\n"),
                 )
             }
         }
 
-    @Test
-    fun `every post program compiles`() {
-        if (!compiler()) return
+    private fun postProgramsFor(root: File): List<File> {
+        val byName = linkedMapOf<String, File>()
+        for (dir in listOf(File(shared, "post"), File(root, "post"))) {
+            dir.listFiles { f -> f.extension == "fsh" }.orEmpty().forEach { byName[it.name] = it }
+        }
+        return byName.values.sortedBy { it.name }
+    }
 
-        val dir = createTempDirectory("shadr-glsl").toFile()
-        val programs = File(overlay, "post").listFiles { f -> f.extension == "fsh" }
-            .orEmpty()
-            .sortedBy { it.name }
-        assertTrue(programs.isNotEmpty(), "no post programs to compile")
+    @Test
+    fun `every post program compiles for every overlay that ships it`() {
+        if (!compiler()) return
+        assertTrue(overlays.isNotEmpty(), "no shader overlays found")
 
         val broken = mutableListOf<String>()
-        for (program in programs) {
-            val flattened = File(dir, program.nameWithoutExtension + ".frag")
-            flattened.writeText(resolve(program))
+        val counts = mutableMapOf<String, Int>()
+        for (root in overlays) {
+            val programs = postProgramsFor(root)
+            counts[root.name] = programs.size
+            val dir = createTempDirectory("shadr-post-${root.name}").toFile()
+            for (program in programs) {
+                val flattened = File(dir, program.nameWithoutExtension + ".frag")
+                flattened.writeText(resolve(root, program))
 
-            val process = ProcessBuilder("glslangValidator", "-S", "frag", flattened.path)
-                .redirectErrorStream(true).start()
-            val output = process.inputStream.bufferedReader().readText()
-            if (process.waitFor() != 0) {
-                broken += "${program.name}:\n" + output.lines().take(8).joinToString("\n")
+                val process = ProcessBuilder("glslangValidator", "-S", "frag", flattened.path)
+                    .redirectErrorStream(true).start()
+                val output = process.inputStream.bufferedReader().readText()
+                if (process.waitFor() != 0) {
+                    broken += "${root.name}/${program.name}:\n" + output.lines().take(8).joinToString("\n")
+                }
             }
         }
 
         assertTrue(broken.isEmpty(), "these post programs do not compile:\n" + broken.joinToString("\n\n"))
+        assertTrue(
+            counts.values.all { it > 0 },
+            "every overlay must ship post programs now that the blur chain is shared, but got $counts",
+        )
     }
 
     @Test
-    fun `the fullscreen vertex program compiles`() {
+    fun `the fullscreen vertex program compiles for every overlay`() {
         if (!compiler()) return
 
-        val source = File(overlay, "post/shadr_fullscreen.vsh")
-        assertTrue(source.isFile, "no fullscreen vertex program")
+        for (root in overlays) {
+            val source = File(root, "post/shadr_fullscreen.vsh").takeIf { it.isFile }
+                ?: File(shared, "post/shadr_fullscreen.vsh")
+            assertTrue(source.isFile, "${root.name} has no fullscreen vertex program")
 
-        val dir = createTempDirectory("shadr-glsl-vert").toFile()
-        val flattened = File(dir, "fullscreen.vert")
-        flattened.writeText(resolve(source))
+            val dir = createTempDirectory("shadr-post-vert-${root.name}").toFile()
+            val flattened = File(dir, "fullscreen.vert")
+            flattened.writeText(resolve(root, source))
 
-        val process = ProcessBuilder("glslangValidator", "-S", "vert", flattened.path)
-            .redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
-        assertTrue(process.waitFor() == 0, "the fullscreen vertex program does not compile:\n$output")
+            val process = ProcessBuilder("glslangValidator", "-S", "vert", flattened.path)
+                .redirectErrorStream(true).start()
+            val output = process.inputStream.bufferedReader().readText()
+            assertTrue(
+                process.waitFor() == 0,
+                "${root.name}: the fullscreen vertex program does not compile:\n$output",
+            )
+        }
     }
 }

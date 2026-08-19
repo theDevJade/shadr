@@ -22,6 +22,10 @@ out vec4 vertexColor;
 out vec2 texCoord0;
 out vec2 texCoord1;
 out vec2 texCoord2;
+out vec4 shadrTint;
+
+out vec3 shadrWorldPos;
+flat out vec3 shadrEye;
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
@@ -34,6 +38,10 @@ void main() {
     texCoord0 = UV0;
     texCoord1 = UV1;
     texCoord2 = vec2(UV2);
+    shadrTint = Color;
+
+    shadrWorldPos = Position + ModelOffset;
+    shadrEye = ModelOffset - inverse(mat3(ModelViewMat)) * ModelViewMat[3].xyz;
 
     if (make_hud()) {
         vertexColor = Color;

@@ -99,13 +99,16 @@ class PacketCamera(
         sessions.keys.toList().forEach { stop(PlayerId(it.toString())) }
     }
 
-    private fun eyeMeta(creeper: Boolean): List<MetaValue> = if (creeper) {
-        listOf(MetaValue.of(Displays.ENTITY_FLAGS, Displays.FLAG_INVISIBLE))
-    } else {
-        listOf(
-            MetaValue.of(DisplayMeta.BILLBOARD, DisplayMeta.BILLBOARD_FIXED),
-            MetaValue.of(DisplayMeta.BRIGHTNESS, DisplayMeta.BRIGHTNESS_FULL),
-        )
+    private fun eyeMeta(creeper: Boolean): List<MetaValue> {
+        val slots = backend.slots()
+        return if (creeper) {
+            listOf(MetaValue.of(slots.sharedFlags(), slots.invisibleFlag()))
+        } else {
+            listOf(
+                MetaValue.of(slots.billboard(), slots.billboardFixed()),
+                MetaValue.of(slots.brightness(), slots.brightnessFull()),
+            )
+        }
     }
 
     private fun spawnSeat(owner: Player, at: Location): Entity =

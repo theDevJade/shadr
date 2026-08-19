@@ -21,6 +21,10 @@ out float sphericalVertexDistance;
 out float cylindricalVertexDistance;
 out vec4 vertexColor;
 out vec2 texCoord0;
+out vec4 shadrTint;
+
+out vec3 shadrWorldPos;
+flat out vec3 shadrEye;
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
@@ -31,6 +35,10 @@ void main() {
     vertexColor = minecraft_mix_light(Light0_Direction, Light1_Direction, Normal, Color) * sample_lightmap(Sampler2, UV2);
 
     texCoord0 = UV0;
+    shadrTint = Color;
+
+    shadrWorldPos = Position + ModelOffset;
+    shadrEye = ModelOffset - inverse(mat3(ModelViewMat)) * ModelViewMat[3].xyz;
 
     if (make_hud()) {
         vertexColor = Color;

@@ -24,6 +24,7 @@ public final class MinestomCamera implements CameraControl {
     private static final class Seat {
         Entity camera;
         Entity mount;
+        boolean follow;
         int relockTicks = RELOCK_INTERVAL_TICKS;
         boolean clickTargets;
     }
@@ -56,6 +57,41 @@ public final class MinestomCamera implements CameraControl {
     @Override
     public void start(PlayerId player) {
         start(player, null);
+    }
+
+    public boolean isSeated(PlayerId player) {
+        final Seat seat = seats.get(player.getUuid());
+        return seat != null && seat.camera != null && !seat.follow;
+    }
+
+    public void startFollowing(PlayerId player, Runnable whenReady) {
+        final Player entity = players.entity(player);
+        if (entity == null || isActive(player)) return;
+
+        final Seat seat = new Seat();
+        seat.follow = true;
+        seats.put(player.getUuid(), seat);
+
+        final Entity camera = new Entity(postEffects.getAsBoolean() ? EntityType.CREEPER : EntityType.TEXT_DISPLAY);
+        camera.setNoGravity(true);
+        camera.setInvisible(true);
+        camera.setAutoViewable(false);
+
+        camera.setInstance(entity.getInstance(), eyeOf(entity)).thenRun(() -> {
+            camera.addViewer(entity);
+            seat.camera = camera;
+            if (whenReady != null) whenReady.run();
+        }).exceptionally(error -> {
+            System.err.println("[shadr] failed to attach hud carrier for " + player.getUuid() + ": " + error);
+            seats.remove(player.getUuid());
+            camera.remove();
+            return null;
+        });
+    }
+
+    private static Pos eyeOf(Player entity) {
+        final Pos at = entity.getPosition();
+        return at.add(0, entity.getEyeHeight(), 0);
     }
 
     public void start(PlayerId player, Runnable whenReady) {
@@ -126,11 +162,17 @@ public final class MinestomCamera implements CameraControl {
         for (Map.Entry<String, Seat> entry : seats.entrySet()) {
             final Seat seat = entry.getValue();
             if (seat.camera == null) continue;
+            if (seat.follow) {
+                final Player owner = players.entity(new PlayerId(entry.getKey()));
+                if (owner != null) seat.camera.teleport(eyeOf(owner).withView(owner.getPosition()));
+                continue;
+            }
             if (--seat.relockTicks > 0) continue;
             seat.relockTicks = RELOCK_INTERVAL_TICKS;
 
             final Player entity = players.entity(new PlayerId(entry.getKey()));
             if (entity == null) continue;
+            if (seat.follow) continue;
             if (entity.getVehicle() == null && seat.mount != null) seat.mount.addPassenger(entity);
             entity.spectate(seat.camera);
         }

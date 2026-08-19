@@ -98,6 +98,7 @@ class PageLoader(
         if (node == null) return ScreenDef()
         val width = node.number("width", fallback = 1920.0)
         val height = node.number("height", fallback = 1080.0)
+        val cursorSize = node.number("cursorSize", fallback = 10.0)
         return ScreenDef(
             width = width,
             height = height,
@@ -106,10 +107,11 @@ class PageLoader(
             previewDefaultZoom = node.number("preview.defaultZoom", fallback = 0.8),
             hitboxOffsetX = node.number("hitboxOffsetX"),
             hitboxOffsetY = node.number("hitboxOffsetY"),
-            cursorSize = node.number("cursorSize", fallback = 10.0),
+            cursorSize = cursorSize,
             cursorSpeed = node.number("cursorSpeed", fallback = 1.0),
             cursorUnicode = node.string("cursorUnicode") ?: Glyphs.CURSOR.toString(),
             cursorLayer = node.number("cursorLayer", fallback = 9700.0),
+            hud = node.bool("hud", "overlay") || cursorSize <= 0.0,
         )
     }
 

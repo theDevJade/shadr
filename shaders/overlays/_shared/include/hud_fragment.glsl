@@ -4,6 +4,8 @@
  * Licensed under the Apache License, Version 2.0. See LICENSE.
  * SPDX-License-Identifier: Apache-2.0
  */
+#moj_import <shadr_profile.glsl>
+
 #define SHADR_FIELD_RANGE 4.0
 
 #define SHADR_BLUR_KEY vec3(0.0, 0.047058824, 0.011764706)
@@ -23,11 +25,19 @@ bool shadr_is_field() {
 }
 
 bool shadr_is_blur_panel() {
+#if SHADR_BLUR_PANELS
     return shadr_has_mode(4.0);
+#else
+    return false;
+#endif
 }
 
 bool shadr_is_stream() {
+#if SHADR_MAP_STREAM
     return shadr_has_mode(8.0);
+#else
+    return false;
+#endif
 }
 
 float shadr_median(vec3 field) {
