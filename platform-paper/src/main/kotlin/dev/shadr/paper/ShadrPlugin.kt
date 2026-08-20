@@ -564,7 +564,7 @@ class ShadrPlugin : JavaPlugin() {
         )
         for ((label, step) in steps) {
             runCatching(step).onFailure {
-                logger.severe("shadr: close step '" + label + "' failed for ${'$'}{player.uuid}: ${'$'}{it.message}")
+                logger.severe("shadr: close step '$label' failed for ${player.uuid}: ${it.message}")
             }
         }
     }
