@@ -10,7 +10,7 @@ apply(plugin = "com.diffplug.spotless")
 configure<com.diffplug.gradle.spotless.SpotlessExtension> {
     format("glsl") {
         target("shaders/**/*.glsl")
-        licenseHeaderFile(licenseHeader, "(#define|#moj_import|//)")
+        licenseHeaderFile(licenseHeader, "(#|//|[a-zA-Z])")
         trimTrailingWhitespace()
         endWithNewline()
     }

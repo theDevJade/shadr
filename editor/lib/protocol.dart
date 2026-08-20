@@ -105,8 +105,6 @@ class Rounding {
 
   double resolvedRadius(double width, double height) {
     final shorter = width < height ? width : height;
-    final explicit = radius;
-    if (explicit != null) return quantise(explicit.clamp(0.0, shorter / 2), width, height);
     final preset = switch (size.toUpperCase()) {
       'NONE' => 0.0,
       'SMALL' => 4.0,
@@ -114,7 +112,7 @@ class Rounding {
       'LARGE' => 24.0,
       _ => 14.0,
     };
-    return preset.clamp(0.0, shorter / 2);
+    return (radius ?? preset).clamp(0.0, shorter / 2);
   }
 }
 
