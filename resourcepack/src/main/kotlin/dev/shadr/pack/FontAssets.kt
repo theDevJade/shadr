@@ -6,7 +6,9 @@
  */
 package dev.shadr.pack
 
+import dev.shadr.core.text.FontMetrics
 import dev.shadr.core.text.Glyphs
+import dev.shadr.core.text.MetricsTable
 import dev.shadr.pack.msdf.MsdfFont
 import java.awt.AlphaComposite
 import java.awt.Color
@@ -21,58 +23,90 @@ object FontAssets {
     private const val FONT_DIR = "assets/minecraft/font"
     private const val TEXTURE_DIR = "assets/minecraft/textures/font/shadr"
 
-    fun writeAll(root: File, ttfDir: File) {
-        writeTextures(root)
+    fun writeAll(root: File, ttfDir: File): MetricsTable {
+        val images = writeTextures(root)
         writeTtf(root, ttfDir)
-        writeUiFont(root)
-        writeSharpFont(root, ttfDir)
+        val bitmaps = writeUiFont(root, images)
+        val fonts = linkedMapOf<String, FontMetrics>()
+
+        for ((key, name) in listOf(
+            Glyphs.FONT_UI to "nerd_mono.ttf",
+            Glyphs.FONT_UI_SEMIBOLD to "nerd_mono_semibold.ttf",
+        )) {
+            val ttf = File(ttfDir, name).takeIf { it.isFile } ?: continue
+            val base = FontMetricsBuilder.ttf(ttf, MetricsTable.TTF_PIXEL_SIZE, TTF_CODEPOINTS)
+            fonts[key] = FontMetricsBuilder.withBitmaps(base, bitmaps)
+        }
+
+        fonts += writeSharpFont(root, ttfDir)
         writeHeadFonts(root)
+        return MetricsTable(fonts)
     }
 
-    private fun writeSharpFont(root: File, ttfDir: File) {
+    private fun writeSharpFont(root: File, ttfDir: File): Map<String, FontMetrics> = buildMap {
         writeSharpWeight(root, File(ttfDir, "nerd_mono.ttf"), "msdf_nerd_mono", Glyphs.FONT_UI_SHARP)
+            ?.let { put(Glyphs.FONT_UI_SHARP, it) }
         writeSharpWeight(
             root, File(ttfDir, "nerd_mono_semibold.ttf"), "msdf_nerd_mono_semibold",
             Glyphs.FONT_UI_SHARP_SEMIBOLD,
-        )
+        )?.let { put(Glyphs.FONT_UI_SHARP_SEMIBOLD, it) }
     }
 
-    private fun writeSharpWeight(root: File, ttf: File, textureName: String, fontKey: String) {
-        if (!ttf.isFile) return
-        val provider = MsdfFont(ttf, cell = MSDF_CELL, spread = MSDF_SPREAD).write(
+    private fun writeSharpWeight(
+        root: File,
+        ttf: File,
+        textureName: String,
+        fontKey: String,
+    ): FontMetrics? {
+        if (!ttf.isFile) return null
+        val written = MsdfFont(ttf, cell = MSDF_CELL, spread = MSDF_SPREAD).writeWithMetrics(
             packRoot = root,
             texturePath = "font/shadr/$textureName.png",
             codepointStart = 0,
         )
-        write(root, "$FONT_DIR/$fontKey.json", fontJson(listOf(provider)))
+        write(root, "$FONT_DIR/$fontKey.json", fontJson(listOf(written.provider)))
+        return FontMetricsBuilder.msdf(
+            advanceTexels = written.advanceTexels,
+            cell = MSDF_CELL,
+            renderedHeight = written.renderedHeight,
+            ascent = written.ascent.toDouble(),
+            charset = written.charset,
+        )
     }
 
-    private fun writeTextures(root: File) {
-        png(root, "$TEXTURE_DIR/background.png", solid(1, 1, Color.WHITE))
+    private fun writeTextures(root: File): Map<String, BufferedImage> {
+        val images = linkedMapOf<String, BufferedImage>()
+        fun png(rel: String, image: BufferedImage) {
+            images[rel.removePrefix("$TEXTURE_DIR/").let { "shadr/$it" }] = image
+            png(root, rel, image)
+        }
 
-        png(root, "$TEXTURE_DIR/rounded.png", roundedSquare(26, 4.0))
-        png(root, "$TEXTURE_DIR/rounded2.png", roundedSquare(26, 7.0))
-        png(root, "$TEXTURE_DIR/rounded3.png", roundedSquare(26, 11.0))
+        png("$TEXTURE_DIR/background.png", solid(1, 1, Color.WHITE))
 
-        png(root, "$TEXTURE_DIR/gradient.png", verticalGradient(512, 512))
-        png(root, "$TEXTURE_DIR/slider.png", sliderTrack(64))
-        png(root, "$TEXTURE_DIR/circle.png", filledEllipse(512))
+        png("$TEXTURE_DIR/rounded.png", roundedSquare(26, 4.0))
+        png("$TEXTURE_DIR/rounded2.png", roundedSquare(26, 7.0))
+        png("$TEXTURE_DIR/rounded3.png", roundedSquare(26, 11.0))
 
-        png(root, "$TEXTURE_DIR/spaces.png", transparent(256, 256))
+        png("$TEXTURE_DIR/gradient.png", verticalGradient(512, 512))
+        png("$TEXTURE_DIR/slider.png", sliderTrack(64))
+        png("$TEXTURE_DIR/circle.png", filledEllipse(512))
+
+        png("$TEXTURE_DIR/spaces.png", transparent(256, 256))
 
         Glyphs.RADII.forEachIndexed { radiusIndex, radiusName ->
             val size = CORNER_SOURCE_SIZE
             Glyphs.CORNERS.indices.forEach { corner ->
-                png(root, "$TEXTURE_DIR/rounding/$radiusName/${corner + 1}.png", quarterDisc(size, corner))
+                png("$TEXTURE_DIR/rounding/$radiusName/${corner + 1}.png", quarterDisc(size, corner))
             }
             check(radiusIndex in Glyphs.RADII.indices)
         }
 
         Glyphs.CURSOR_NAMES.forEachIndexed { index, name ->
-            png(root, "$TEXTURE_DIR/cursors/$name.png", cursor(index))
+            png("$TEXTURE_DIR/cursors/$name.png", cursor(index))
         }
 
-        png(root, "$TEXTURE_DIR/head_pixel.png", solid(1, 1, Color.WHITE))
+        png("$TEXTURE_DIR/head_pixel.png", solid(1, 1, Color.WHITE))
+        return images
     }
 
     private fun solid(width: Int, height: Int, color: Color) = image(width, height) { g ->
@@ -225,8 +259,8 @@ object FontAssets {
         }
     }
 
-    private fun writeUiFont(root: File) {
-        val bitmaps = uiBitmapProviders()
+    private fun writeUiFont(root: File, images: Map<String, BufferedImage>): Map<Int, Double> {
+        val (bitmaps, advances) = uiBitmapProviders(images)
         write(
             root,
             "$FONT_DIR/${Glyphs.FONT_UI}.json",
@@ -237,16 +271,26 @@ object FontAssets {
             "$FONT_DIR/${Glyphs.FONT_UI_SEMIBOLD}.json",
             fontJson(listOf(ttfProvider("nerd_mono_semibold.ttf")) + bitmaps),
         )
+        return advances
     }
 
-    private fun uiBitmapProviders(): List<String> {
+    private fun uiBitmapProviders(
+        images: Map<String, BufferedImage>,
+    ): Pair<List<String>, Map<Int, Double>> {
         val providers = mutableListOf<String>()
+        val advances = linkedMapOf<Int, Double>()
+
+        fun add(texture: String, ascent: Int, height: Int, codepoint: Int) {
+            providers += bitmapProvider(texture, ascent, height, codepoint)
+            images[texture]?.let { advances[codepoint] = FontMetricsBuilder.bitmapAdvance(it, height) }
+        }
+
         for ((codepoint, texture) in Glyphs.SHAPE_TEXTURES) {
-            providers += bitmapProvider("shadr/$texture.png", ascent = 64, height = 64, codepoint)
+            add("shadr/$texture.png", ascent = 64, height = 64, codepoint = codepoint)
         }
         Glyphs.RADII.forEachIndexed { radiusIndex, radiusName ->
             Glyphs.CORNERS.forEachIndexed { cornerIndex, cornerName ->
-                providers += bitmapProvider(
+                add(
                     "shadr/rounding/$radiusName/$cornerName.png",
                     ascent = 64, height = 64,
                     codepoint = Glyphs.cornerBase(radiusIndex) + cornerIndex,
@@ -254,10 +298,11 @@ object FontAssets {
             }
         }
         Glyphs.CURSOR_NAMES.forEachIndexed { index, name ->
-            providers += bitmapProvider("shadr/cursors/$name.png", 64, 64, Glyphs.CURSOR_BASE + index)
+            add("shadr/cursors/$name.png", 64, 64, Glyphs.CURSOR_BASE + index)
         }
-        providers += bitmapProvider("shadr/spaces.png", NEGATIVE_SPACE_ASCENT, NEGATIVE_SPACE_HEIGHT, Glyphs.NEGATIVE_SPACE.code)
-        return providers
+        add("shadr/spaces.png", NEGATIVE_SPACE_ASCENT, NEGATIVE_SPACE_HEIGHT, Glyphs.NEGATIVE_SPACE.code)
+        advances[Glyphs.NEGATIVE_SPACE.code] = NEGATIVE_SPACE_ADVANCE
+        return providers to advances
     }
 
     private fun writeHeadFonts(root: File) {
@@ -305,4 +350,10 @@ object FontAssets {
 
     private const val NEGATIVE_SPACE_ASCENT = -5000
     private const val NEGATIVE_SPACE_HEIGHT = -3
+
+    private const val NEGATIVE_SPACE_ADVANCE = -2.0
+
+    /** Latin-1 plus the punctuation the shipped pages use; the reserved range is bitmap-only. */
+    private val TTF_CODEPOINTS: List<Int> =
+        ((0x20..0x7E) + (0xA0..0x24F) + (0x2000..0x206F) + (0x20A0..0x20BF) + (0x2190..0x21FF)).toList()
 }

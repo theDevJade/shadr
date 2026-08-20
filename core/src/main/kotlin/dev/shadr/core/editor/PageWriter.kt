@@ -6,6 +6,10 @@
  */
 package dev.shadr.core.editor
 
+import dev.shadr.core.HudAlignment
+import dev.shadr.core.TextAlignment
+import dev.shadr.core.page.Slider
+import dev.shadr.core.page.TextInput
 import dev.shadr.core.page.Element
 import dev.shadr.core.page.Page
 import org.yaml.snakeyaml.DumperOptions
@@ -472,6 +476,21 @@ class PageWriter {
         put(node, "size.height", Value.Num(element.height))
 
         if (element.type.isTextual) node.put("text", scalar(Value.Text(element.text)))
+        if (element.font != dev.shadr.core.text.Glyphs.FONT_UI) node.put("font", scalar(Value.Text(element.font)))
+        if (element.unicode != dev.shadr.core.text.Glyphs.BACKGROUND.toString()) {
+            node.put("unicode", scalar(Value.Text(element.unicode)))
+        }
+        if (element.type.isTextual && element.textAlignment != TextAlignment.CENTER) {
+            node.put("textAlign", scalar(Value.Text(element.textAlignment.name.lowercase())))
+        }
+        if (element.hudAlignment != HudAlignment.CENTER) {
+            node.put("align", scalar(Value.Text(element.hudAlignment.name.lowercase())))
+        }
+        if (element.lineWidth != dev.shadr.core.hud.DisplayMeta.DEFAULT_TEXT_WRAP_LINE_WIDTH) {
+            node.put("lineWidth", scalar(Value.Num(element.lineWidth.toDouble())))
+        }
+        if (element.rotationDeg != 0.0) node.put("rotationDeg", scalar(Value.Num(element.rotationDeg)))
+        if (!element.enabled) node.put("enabled", scalar(Value.Flag(false)))
         element.item?.takeIf { it.isNotBlank() }?.let {
             node.put(element.type.sourceKey, scalar(Value.Text(it)))
         }
@@ -489,7 +508,34 @@ class PageWriter {
             node.put("maxLength", scalar(Value.Num(input.maxLength.toDouble())))
             if (input.lines != 1) node.put("lines", scalar(Value.Num(input.lines.toDouble())))
             if (input.secret) node.put("secret", scalar(Value.Text("true")))
+            if (input.fontSize != TextInput().fontSize) {
+                node.put("fontSize", scalar(Value.Num(input.fontSize)))
+            }
+            if (input.padding != TextInput().padding) {
+                node.put("padding", scalar(Value.Num(input.padding)))
+            }
         }
+        element.toggle?.let { toggle ->
+            if (toggle.value) node.put("value", scalar(Value.Flag(true)))
+        }
+        element.slider?.let { slider ->
+            node.put("value", scalar(Value.Num(slider.value)))
+            if (slider.min != Slider().min) node.put("min", scalar(Value.Num(slider.min)))
+            if (slider.max != Slider().max) node.put("max", scalar(Value.Num(slider.max)))
+            if (slider.step != Slider().step) node.put("step", scalar(Value.Num(slider.step)))
+        }
+        if (element.interaction.onClick.isNotEmpty()) {
+            node.put("onClickAction", actionSequence(element.interaction.onClick))
+        }
+        if (element.interaction.onLeftClick.isNotEmpty()) {
+            node.put("onLeftClickAction", actionSequence(element.interaction.onLeftClick))
+        }
+        if (element.interaction.onRightClick.isNotEmpty()) {
+            node.put("onRightClickAction", actionSequence(element.interaction.onRightClick))
+        }
+        element.interaction.hoverText?.let { node.put("hoverText", scalar(Value.Text(it))) }
+        element.interaction.hoverEffect?.let { node.put("hoverEffect", scalar(Value.Text(it))) }
+        element.interaction.clickEffect?.let { node.put("clickEffect", scalar(Value.Text(it))) }
         return node
     }
 
@@ -522,6 +568,22 @@ class PageWriter {
         if (before.font != after.font) changes["font"] = Value.Text(after.font)
         if (before.enabled != after.enabled) changes["enabled"] = Value.Text(after.enabled.toString())
         if (before.type != after.type) changes["type"] = Value.Text(after.type.id)
+        if (before.textAlignment != after.textAlignment) {
+            changes["textAlign"] = Value.Text(after.textAlignment.name.lowercase())
+        }
+        if (before.hudAlignment != after.hudAlignment) {
+            changes["align"] = Value.Text(after.hudAlignment.name.lowercase())
+        }
+        if (before.unicode != after.unicode) changes["unicode"] = Value.Text(after.unicode)
+        if (before.lineWidth != after.lineWidth) {
+            changes["lineWidth"] = Value.Num(after.lineWidth.toDouble())
+        }
+        if (before.outline?.layer != after.outline?.layer) {
+            after.outline?.layer?.let { changes["outline.layer"] = Value.Num(it) }
+        }
+        diffInput(before.input, after.input, changes)
+        diffToggle(before.toggle, after.toggle, changes)
+        diffSlider(before.slider, after.slider, changes)
         if (before.rounding?.size != after.rounding?.size) {
             after.rounding?.let { changes["rounding.size"] = Value.Text(it.size.id) }
         }
@@ -536,6 +598,63 @@ class PageWriter {
         }
         diffInteraction(before.interaction, after.interaction, changes)
         return changes
+    }
+
+    private fun diffInput(
+        before: TextInput?,
+        after: TextInput?,
+        changes: MutableMap<String, Value>,
+    ) {
+        if (after == null) return
+        if (before?.placeholder != after.placeholder) changes["placeholder"] = Value.Text(after.placeholder)
+        if (before?.value != after.value) changes["value"] = Value.Text(after.value)
+        if (before?.maxLength != after.maxLength) changes["maxLength"] = Value.Num(after.maxLength.toDouble())
+        if (before?.lines != after.lines) changes["lines"] = Value.Num(after.lines.toDouble())
+        if (before?.secret != after.secret) changes["secret"] = Value.Flag(after.secret)
+        if (before?.fontSize != after.fontSize) changes["fontSize"] = Value.Num(after.fontSize)
+        if (before?.padding != after.padding) changes["padding"] = Value.Num(after.padding)
+        if (before?.textColor != after.textColor) {
+            after.textColor?.let { changes["textColor"] = Value.Text(it.hex()) }
+        }
+        if (before?.placeholderColor != after.placeholderColor) {
+            after.placeholderColor?.let { changes["placeholderColor"] = Value.Text(it.hex()) }
+        }
+        if (before?.onSubmit != after.onSubmit && after.onSubmit.isNotEmpty()) {
+            changes["onSubmitAction"] = Value.Actions(after.onSubmit)
+        }
+    }
+
+    private fun diffToggle(
+        before: dev.shadr.core.page.Toggle?,
+        after: dev.shadr.core.page.Toggle?,
+        changes: MutableMap<String, Value>,
+    ) {
+        if (after == null) return
+        if (before?.value != after.value) changes["value"] = Value.Flag(after.value)
+        if (before?.onColor != after.onColor) changes["onColor"] = Value.Text(after.onColor.hex())
+        if (before?.offColor != after.offColor) changes["offColor"] = Value.Text(after.offColor.hex())
+        if (before?.knobColor != after.knobColor) changes["knobColor"] = Value.Text(after.knobColor.hex())
+        if (before?.onChange != after.onChange && after.onChange.isNotEmpty()) {
+            changes["onChangeAction"] = Value.Actions(after.onChange)
+        }
+    }
+
+    private fun diffSlider(
+        before: Slider?,
+        after: Slider?,
+        changes: MutableMap<String, Value>,
+    ) {
+        if (after == null) return
+        if (before?.value != after.value) changes["value"] = Value.Num(after.value)
+        if (before?.min != after.min) changes["min"] = Value.Num(after.min)
+        if (before?.max != after.max) changes["max"] = Value.Num(after.max)
+        if (before?.step != after.step) changes["step"] = Value.Num(after.step)
+        if (before?.trackColor != after.trackColor) changes["trackColor"] = Value.Text(after.trackColor.hex())
+        if (before?.fillColor != after.fillColor) changes["fillColor"] = Value.Text(after.fillColor.hex())
+        if (before?.knobColor != after.knobColor) changes["knobColor"] = Value.Text(after.knobColor.hex())
+        if (before?.onChange != after.onChange && after.onChange.isNotEmpty()) {
+            changes["onChangeAction"] = Value.Actions(after.onChange)
+        }
     }
 
     private fun diffInteraction(
@@ -646,11 +765,7 @@ class PageWriter {
             DumperOptions.ScalarStyle.PLAIN,
         )
         is Value.Num -> {
-            val text = if (value.value == value.value.toLong().toDouble()) {
-                value.value.toLong().toString()
-            } else {
-                value.value.toString()
-            }
+            val text = formatNumber(value.value)
             ScalarNode(resolver.resolve(NodeId.scalar, text, true), text, null, null, DumperOptions.ScalarStyle.PLAIN)
         }
         is Value.Text -> {
@@ -662,6 +777,14 @@ class PageWriter {
     }
 
     private val resolver = Resolver()
+
+    private fun formatNumber(value: Double): String {
+        if (!value.isFinite()) return "0"
+        val rounded = java.math.BigDecimal(value)
+            .setScale(NUMBER_SCALE, java.math.RoundingMode.HALF_UP)
+            .stripTrailingZeros()
+        return if (rounded.scale() <= 0) rounded.toBigInteger().toString() else rounded.toPlainString()
+    }
 
     private fun serialize(root: Node): String {
         val options = DumperOptions().apply {
@@ -695,6 +818,8 @@ class PageWriter {
     }
 
     companion object {
+        private const val NUMBER_SCALE = 4
+
         fun instancePathOf(path: String): String? {
             val segments = path.split('.')
             val at = segments.indexOfFirst { it.startsWith("component:") }

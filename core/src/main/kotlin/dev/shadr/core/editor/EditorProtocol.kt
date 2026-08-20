@@ -22,12 +22,25 @@ data class Welcome(
     val documents: List<DocumentRef> = emptyList(),
 ) : EditorMessage
 
+/**
+ * Where an element really lands.
+ */
+@Serializable
+data class ElementGeometry(
+    val render: dev.shadr.core.hud.RenderBox,
+    val hit: dev.shadr.core.hud.RenderBox,
+    val takesInput: Boolean = false,
+)
+
 @Serializable
 @SerialName("snapshot")
 data class PageSnapshot(
     val name: String,
     val screen: ScreenDef,
     val elements: List<Element>,
+    val geometry: Map<String, ElementGeometry> = emptyMap(),
+    val metrics: dev.shadr.core.text.MetricsTable = dev.shadr.core.text.MetricsTable.EMPTY,
+    val actionVerbs: List<String> = emptyList(),
     val issues: List<String> = emptyList(),
     val locked: Map<String, String> = emptyMap(),
     val canUndo: Boolean = false,
@@ -123,7 +136,7 @@ data class SaveResult(
     val expressionsReplaced: List<String> = emptyList(),
 ) : EditorMessage
 
-const val PROTOCOL_VERSION = 2
+const val PROTOCOL_VERSION = 3
 
 val editorJson: Json = Json {
     classDiscriminator = "t"

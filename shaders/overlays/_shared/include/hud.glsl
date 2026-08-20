@@ -41,8 +41,15 @@ float shadr_depth(float depth01) {
     return shadr_z_zero_to_one() ? depth01 : depth01 * 2.0 - 1.0;
 }
 
+#define SHADR_HEADER_BAND -180000.0
+
 bool make_hud() {
     shadrMode = 0.0;
+
+    if (Position.y < SHADR_HEADER_BAND) {
+        gl_Position = vec4(0.0, 0.0, -10.0, 1.0);
+        return true;
+    }
 
     if (is_hud(Position)) {
         float y = Position.y;

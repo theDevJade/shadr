@@ -1,6 +1,8 @@
 #version 330
 
 #moj_import <minecraft:fog.glsl>
+#moj_import <minecraft:globals.glsl>
+#moj_import <shadr_sun.glsl>
 
 #define CLOUD_DEBUG 0
 
@@ -16,25 +18,22 @@ const float THICKNESS = 34.0;
 
 const float MAX_MARCH = 260.0;
 
-const int STEPS = 14;
-const int LIGHT_STEPS = 2;
+const int STEPS = 18;
+const int LIGHT_STEPS = 3;
 
 const float NOISE_SCALE = 1.0 / 46.0;
 
 const float COVERAGE = 0.46;
 
-const float DENSITY = 0.13;
+const float DENSITY = 0.14;
 
 const float LATERAL_FALLOFF = 1.0 / (55.0 * 55.0);
 
-const vec3 LIGHT_DIR = normalize(vec3(0.45, 0.85, 0.25));
+const float LIGHT_STEP = 6.0;
 
-const float LIGHT_STEP = 7.0;
+const float ABSORPTION = 1.15;
 
-const vec3 CLOUD_LIT = vec3(1.06, 1.03, 0.99);
-const vec3 CLOUD_SHADOW = vec3(0.52, 0.58, 0.72);
-
-const float ABSORPTION = 1.35;
+const vec2 WIND = vec2(1.6, 0.4);
 
 float cloud_hash(vec3 p) {
     p = fract(p * 0.3183099 + vec3(0.11, 0.17, 0.13));
@@ -64,31 +63,39 @@ float cloud_noise(vec3 p) {
 }
 
 float cloud_fbm(vec3 p) {
-    float sum = cloud_noise(p) * 0.5;
-    sum += cloud_noise(p * 2.03 + 17.3) * 0.32;
-    sum += cloud_noise(p * 4.11 + 41.7) * 0.18;
+    float sum = cloud_noise(p) * 0.52;
+    sum += cloud_noise(p * 2.03 + 17.3) * 0.28;
+    sum += cloud_noise(p * 4.11 + 41.7) * 0.14;
+    sum += cloud_noise(p * 8.36 + 89.1) * 0.06;
     return sum;
 }
 
-float cloud_density(vec3 p) {
-    float height = clamp((p.y - cloudLayerY) / THICKNESS, 0.0, 1.0);
-    float profile = smoothstep(0.0, 0.22, height) * smoothstep(1.0, 0.45, height);
-    if (profile <= 0.0) return 0.0;
+float cloud_profile(float y) {
+    float height = clamp((y - cloudLayerY) / THICKNESS, 0.0, 1.0);
+    return smoothstep(0.0, 0.18, height) * smoothstep(1.0, 0.4, height) *
+        mix(0.85, 1.1, height);
+}
 
-    float shape = cloud_fbm(p * NOISE_SCALE);
+float cloud_density(vec3 p, vec2 drift) {
+    float profile = cloud_profile(p.y);
+    if (profile <= 0.0) return 0.0;
+    vec3 q = vec3(p.x + drift.x, p.y, p.z + drift.y);
+    float shape = cloud_fbm(q * NOISE_SCALE);
     return max(0.0, shape - COVERAGE) * (1.0 / (1.0 - COVERAGE)) * profile;
 }
 
-float cloud_light(vec3 p) {
-    float shadow = 0.0;
+float cloud_transmittance_to_light(vec3 p, vec3 lightDir, vec2 drift) {
+    float optical = 0.0;
     for (int i = 1; i <= LIGHT_STEPS; i++) {
-        vec3 sample_at = p + LIGHT_DIR * (LIGHT_STEP * float(i));
-        float height = clamp((sample_at.y - cloudLayerY) / THICKNESS, 0.0, 1.0);
-        float profile = smoothstep(0.0, 0.22, height) * smoothstep(1.0, 0.45, height);
-        float shape = cloud_noise(sample_at * NOISE_SCALE) * 0.5;
-        shadow += max(0.0, shape - COVERAGE * 0.5) * profile;
+        vec3 at = p + lightDir * (LIGHT_STEP * float(i));
+        optical += cloud_density(at, drift);
     }
-    return exp(-shadow * ABSORPTION);
+    return exp(-optical * ABSORPTION * LIGHT_STEP * 0.35);
+}
+
+float cloud_phase(float mu, float g) {
+    float g2 = g * g;
+    return (1.0 - g2) / (4.0 * 3.14159265 * pow(1.0 + g2 - 2.0 * g * mu, 1.5));
 }
 
 void main() {
@@ -104,6 +111,17 @@ void main() {
     return;
 #endif
 
+    float dayFactor;
+    vec3 lightDir = shadr_celestial_world(GameTime, dayFactor);
+    float horizonGlow = 1.0 - clamp(abs(lightDir.y) * 3.0, 0.0, 1.0);
+
+    vec3 lit = mix(vec3(0.32, 0.36, 0.52), vec3(1.08, 1.04, 0.98), dayFactor);
+    lit = mix(lit, vec3(1.15, 0.72, 0.46), horizonGlow * dayFactor);
+    vec3 shadow = mix(vec3(0.10, 0.12, 0.20), vec3(0.50, 0.56, 0.72), dayFactor);
+    vec3 ambient = mix(vec3(0.12, 0.14, 0.22), vec3(0.68, 0.74, 0.86), dayFactor);
+
+    vec2 drift = WIND * GameTime * 1200.0;
+
     vec3 rayDirection = normalize(cloudPosition);
     vec3 origin = cloudPosition;
 
@@ -117,16 +135,19 @@ void main() {
     }
     if (exit <= 0.0) discard;
 
+    float mu = dot(rayDirection, lightDir);
+    float phase = mix(cloud_phase(mu, 0.55), cloud_phase(mu, -0.2), 0.3) * 12.0;
+
     float stepSize = exit / float(STEPS);
     float transmittance = 1.0;
     vec3 scattered = vec3(0.0);
 
-    float jitter = cloud_hash(vec3(gl_FragCoord.xy, 0.0));
+    float jitter = cloud_hash(vec3(gl_FragCoord.xy, fract(GameTime * 977.0)));
 
     for (int i = 0; i < STEPS; i++) {
         float along = (float(i) + jitter) * stepSize;
         vec3 p = origin + rayDirection * along;
-        float density = cloud_density(p);
+        float density = cloud_density(p, drift);
         if (density <= 0.0) continue;
 
         density *= 1.0 - smoothstep(MAX_MARCH * 0.8, MAX_MARCH, along);
@@ -135,12 +156,11 @@ void main() {
         density *= exp(-lateral * lateral * LATERAL_FALLOFF);
         if (density <= 0.0) continue;
 
-        float light = cloud_light(p);
-        vec3 colour = mix(CLOUD_SHADOW, CLOUD_LIT, light);
+        float toLight = cloud_transmittance_to_light(p, lightDir, drift);
+        float powder = 1.0 - exp(-density * 4.0);
+        vec3 colour = ambient * 0.35 + mix(shadow, lit, toLight) * phase * powder;
 
-        float absorbed = density * DENSITY * stepSize;
-        absorbed = clamp(absorbed, 0.0, 1.0);
-
+        float absorbed = clamp(density * DENSITY * stepSize, 0.0, 1.0);
         scattered += colour * absorbed * transmittance;
         transmittance *= 1.0 - absorbed;
         if (transmittance < 0.01) break;

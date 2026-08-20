@@ -43,6 +43,12 @@ class PostShaderCompileTest {
 
     private fun compiler(): Boolean = GlslCompiler.available()
 
+    private fun profileFor(root: File): Map<String, String> {
+        val overlay = PackOverlay.entries.firstOrNull { it.sourceDirectory == root.name }
+            ?: error("${root.name} has no PackOverlay entry, so it cannot be given a shader profile")
+        return mapOf(PackOverlay.PROFILE_INCLUDE to overlay.profileGlsl())
+    }
+
     private fun resolve(root: File, file: File, seen: MutableSet<String> = mutableSetOf()): String =
         buildString {
             for (line in file.readLines()) {
@@ -62,7 +68,7 @@ class PostShaderCompileTest {
                 val include = File(root, "include/$name").takeIf { it.isFile }
                     ?: File(shared, "include/$name")
                 if (!include.isFile) {
-                    val produced = generated[name]
+                    val produced = generated[name] ?: profileFor(root)[name]
                     assertTrue(produced != null, "${file.name} imports $name, which does not exist")
                     appendLine(produced)
                     continue

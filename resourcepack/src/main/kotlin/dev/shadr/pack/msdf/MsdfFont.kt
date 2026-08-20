@@ -25,6 +25,15 @@ class MsdfFont(
         val chars: List<String>,
         val emTexels: Double,
         val ascentTexels: Double,
+        val advanceTexels: Int = 0,
+    )
+
+    data class Written(
+        val provider: String,
+        val advanceTexels: Int,
+        val renderedHeight: Int,
+        val ascent: Int,
+        val charset: String,
     )
 
     fun bake(charset: String = DEFAULT_CHARSET): Baked {
@@ -44,6 +53,7 @@ class MsdfFont(
         val glyphs = charset.toList()
         val rows = ceil(glyphs.size / columns.toDouble()).toInt()
         val image = BufferedImage(columns * cell, rows * cell, BufferedImage.TYPE_INT_ARGB)
+        var widestAdvance = 0
 
         glyphs.forEachIndexed { index, character ->
             val column = index % columns
@@ -51,6 +61,7 @@ class MsdfFont(
             val vector = font.createGlyphVector(context, character.toString())
             val outline = vector.getGlyphOutline(0)
             val advance = Math.round(vector.getGlyphMetrics(0).advanceX.toDouble()).toInt()
+            widestAdvance = maxOf(widestAdvance, advance)
 
             val transform = AffineTransform().apply {
                 translate(padding.toDouble(), padding + ascent)
@@ -71,6 +82,7 @@ class MsdfFont(
             },
             emTexels = usable,
             ascentTexels = ascent,
+            advanceTexels = widestAdvance,
         )
     }
 
@@ -80,7 +92,15 @@ class MsdfFont(
         codepointStart: Int,
         emPixels: Double = DEFAULT_EM_PIXELS,
         charset: String = DEFAULT_CHARSET,
-    ): String {
+    ): String = writeWithMetrics(packRoot, texturePath, codepointStart, emPixels, charset).provider
+
+    fun writeWithMetrics(
+        packRoot: File,
+        texturePath: String,
+        codepointStart: Int,
+        emPixels: Double = DEFAULT_EM_PIXELS,
+        charset: String = DEFAULT_CHARSET,
+    ): Written {
         val baked = bake(charset)
         val file = File(packRoot, "assets/minecraft/textures/$texturePath")
         file.parentFile.mkdirs()
@@ -104,8 +124,9 @@ class MsdfFont(
         val rows = baked.chars.joinToString(", ") { row ->
             "\"" + row.map { escapeChar(it) }.joinToString("") + "\""
         }
-        return """{"type": "bitmap", "file": "minecraft:$texturePath", "ascent": $ascent, """ +
+        val provider = """{"type": "bitmap", "file": "minecraft:$texturePath", "ascent": $ascent, """ +
             """"height": $renderedHeight, "chars": [$rows]}"""
+        return Written(provider, baked.advanceTexels, renderedHeight, ascent, charset)
     }
 
     private fun escapeChar(c: Char): String = when {

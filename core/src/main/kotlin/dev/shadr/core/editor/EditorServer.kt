@@ -19,6 +19,7 @@ class EditorServer(
     private val images: ImageSource? = null,
     private val videos: VideoSource? = null,
     private val bindAddress: String = "0.0.0.0",
+    var metrics: dev.shadr.core.text.MetricsTable = dev.shadr.core.text.MetricsTable.EMPTY,
     private val auth: EditorAuth = EditorAuth.Token(EditorAuth.generateToken()),
     webRoot: java.io.File? = null,
     private val tls: javax.net.ssl.SSLContext? = null,
@@ -218,6 +219,30 @@ class EditorServer(
                     connection.send(encode(ShaderSaved(effect.id, packRebuilt = rebuilt)))
                 }
             }
+            is SetEnvironmentParam -> {
+                val settings = environment
+                val effect = dev.shadr.core.shader.EnvironmentEffect.parse(message.id)
+                if (settings == null || effect == null || !settings.setParam(effect, message.key, message.value)) {
+                    connection.send(encode(EditorError("no such effect setting: ${message.id}.${message.key}")))
+                } else {
+                    val rebuilt = onShadersChanged()
+                    broadcastShaders()
+                    connection.send(encode(ShaderSaved(effect.id, packRebuilt = rebuilt)))
+                }
+            }
+            is ApplyEnvironmentPreset -> {
+                val settings = environment
+                val effect = dev.shadr.core.shader.EnvironmentEffect.parse(message.id)
+                val preset = gradingPresets()[message.preset]
+                if (settings == null || effect == null || preset == null) {
+                    connection.send(encode(EditorError("no such preset: ${message.preset}")))
+                } else {
+                    settings.applyPreset(effect, preset)
+                    val rebuilt = onShadersChanged()
+                    broadcastShaders()
+                    connection.send(encode(ShaderSaved(effect.id, packRebuilt = rebuilt)))
+                }
+            }
             is OpenProgram -> {
                 val source = environmentSource
                 val body = source?.read(message.path)
@@ -409,7 +434,7 @@ class EditorServer(
         val page = documents.load(ref)
             ?: return connection.send(encode(EditorError("no such ${ref.kind.name.lowercase()}: ${ref.name}")))
 
-        val opened = EditorSession(page)
+        val opened = EditorSession(page, metrics = metrics)
         opened.onChanged = { changed ->
             onPageChanged(changed)
             socket.broadcast(encode(opened.snapshot(kind = ref.kind)))
@@ -464,6 +489,7 @@ class EditorServer(
             preamble = preamble,
             epilogue = epilogue,
             environment = dev.shadr.core.shader.EnvironmentEffect.entries.map { effect ->
+                val values = environment?.paramsOf(effect) ?: effect.defaults()
                 EnvironmentEffectState(
                     id = effect.id,
                     title = effect.title,
@@ -472,10 +498,33 @@ class EditorServer(
                     programs = effect.programs.map { path ->
                         EnvironmentProgram(path, environmentSource?.isCustomised(path) ?: false)
                     },
+                    worldEffect = effect.isWorldEffect,
+                    params = effect.params.map { param ->
+                        EnvironmentParamState(
+                            key = param.key,
+                            label = param.label,
+                            type = param.type,
+                            value = values[param.key] ?: param.default,
+                            default = param.default,
+                            min = param.min,
+                            max = param.max,
+                            step = param.step,
+                            options = param.options,
+                            group = param.group,
+                        )
+                    },
+                    presets = if (effect == dev.shadr.core.shader.EnvironmentEffect.GRADING) {
+                        gradingPresets().keys.toList()
+                    } else {
+                        emptyList()
+                    },
                 )
             },
         )
     }
+
+    private fun gradingPresets(): Map<String, Map<String, Double>> =
+        dev.shadr.core.shader.GradingPresets.load(environmentSource?.shaderRoot)
 
     private fun broadcastDocuments() {
         socket.broadcast(encode(DocumentList(documents.list())))

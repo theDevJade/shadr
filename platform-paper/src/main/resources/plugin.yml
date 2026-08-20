@@ -9,7 +9,7 @@ description: Screen-space UI built from display entities and font glyphs.
 commands:
   shadr:
     description: Open, close, and reload shadr pages.
-    usage: /shadr <open|close|reload|pack|pages|shader|stream|editor|update>
+    usage: /shadr <open|close|reload|pack|pages|effects|shader|stream|editor|update>
     permission: shadr.command
 
 permissions:

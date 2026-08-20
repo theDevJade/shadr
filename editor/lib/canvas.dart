@@ -93,7 +93,7 @@ class _PageCanvasState extends State<PageCanvas> {
     final element = _resizable;
     if (element == null) return null;
     final model = _model;
-    final rect = model.viewport.toScreenRect(model.boundsOf(element));
+    final rect = model.viewport.toScreenRect(model.renderBoundsOf(element));
     const grab = 8.0;
     for (final handle in ResizeHandle.values) {
       if ((handle.anchorOn(rect) - local).distance <= grab) return handle;
@@ -275,7 +275,7 @@ class _PageCanvasState extends State<PageCanvas> {
     model.setSelection({
       ..._marqueeBase,
       for (final element in model.snapshot?.elements ?? const <Element>[])
-        if (element.enabled && rect.overlaps(model.boundsOf(element))) element.id,
+        if (element.enabled && rect.overlaps(model.renderBoundsOf(element))) element.id,
     });
   }
 
@@ -389,6 +389,7 @@ class _PageCanvasState extends State<PageCanvas> {
                     marquee: _marquee,
                     thumbnails: _thumbnailsByClip(model),
                     live: model.liveRects,
+                    showHitRegions: model.showHitRegions,
                   ),
                   size: Size.infinite,
                 ),
@@ -413,6 +414,7 @@ class _PagePainter extends CustomPainter {
     required this.marquee,
     required this.thumbnails,
     required this.live,
+    this.showHitRegions = false,
   });
 
   final PageSnapshot snapshot;
@@ -428,7 +430,17 @@ class _PagePainter extends CustomPainter {
 
   final Map<String, Rect> live;
 
-  Rect _rectOf(Element element) => live[element.id] ?? element.bounds;
+  final bool showHitRegions;
+
+  Rect _rectOf(Element element) => live[element.id] ?? snapshot.renderRectOf(element);
+
+  Rect _hitRectOf(Element element) {
+    final moved = live[element.id];
+    if (moved == null) return snapshot.hitRectOf(element);
+    final render = snapshot.renderRectOf(element);
+    final hit = snapshot.hitRectOf(element);
+    return hit.shift(moved.topLeft - render.topLeft);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -474,13 +486,42 @@ class _PagePainter extends CustomPainter {
       }
     }
 
+    if (showHitRegions) _paintHitRegions(canvas, visible);
+
     for (final element in snapshot.elements) {
       if (selection.contains(element.id)) _paintSelection(canvas, element);
     }
+    _paintSafeArea(canvas);
     _paintGuides(canvas, size);
     _paintMarquee(canvas);
     canvas.restore();
     canvas.restore();
+  }
+
+  void _paintSafeArea(Canvas canvas) {
+    final page = Rect.fromLTWH(0, 0, snapshot.screen.width, snapshot.screen.height);
+    final paint = Paint()
+      ..color = tokens.border
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1 / viewport.scale;
+    canvas.drawRect(page, paint);
+  }
+
+  void _paintHitRegions(Canvas canvas, Rect visible) {
+    for (final element in snapshot.elements) {
+      final geometry = snapshot.geometryOf(element.id);
+      if (geometry == null || !geometry.takesInput) continue;
+      final hit = _hitRectOf(element);
+      if (!hit.overlaps(visible)) continue;
+      canvas.drawRect(hit, Paint()..color = tokens.hitbox.withValues(alpha: 0.10));
+      canvas.drawRect(
+        hit,
+        Paint()
+          ..color = tokens.hitbox.withValues(alpha: 0.7)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1 / viewport.scale,
+      );
+    }
   }
 
   void _paintElement(Canvas canvas, Element element) {
@@ -488,9 +529,10 @@ class _PagePainter extends CustomPainter {
     final opacity = element.opacity / 255.0;
 
     canvas.save();
-    if (element.rotationDeg != 0) {
+    final rotation = snapshot.rotationOf(element);
+    if (rotation != 0) {
       canvas.translate(rect.center.dx, rect.center.dy);
-      canvas.rotate(element.rotationDeg * math.pi / 180);
+      canvas.rotate(rotation * math.pi / 180);
       canvas.translate(-rect.center.dx, -rect.center.dy);
     }
 
@@ -528,6 +570,7 @@ class _PagePainter extends CustomPainter {
 
   void _paintBox(Canvas canvas, Rect rect, Color color, Element element) {
     final paint = Paint()..color = color;
+    final opacity = color.a;
     switch (element.type) {
       case 'CIRCLE':
         canvas.drawOval(rect, paint);
@@ -541,9 +584,6 @@ class _PagePainter extends CustomPainter {
               colors: [color, color.withValues(alpha: 0)],
             ).createShader(rect),
         );
-      case 'PROGRESS':
-        final radius = math.min(rect.width, rect.height) / 2;
-        canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)), paint);
       case 'VIDEO':
         final image = thumbnails[element.item ?? ''];
         if (image == null) {
@@ -563,7 +603,13 @@ class _PagePainter extends CustomPainter {
             Paint()..color = Colors.white.withValues(alpha: color.a),
           );
         }
+      case 'PROGRESS':
+        final barHeight = math.max(1.0, rect.height / 4);
+        final bar = Rect.fromLTWH(
+            rect.left, rect.top + (rect.height - barHeight) / 2, rect.width, barHeight);
+        canvas.drawRRect(RRect.fromRectAndRadius(bar, Radius.circular(barHeight / 2)), paint);
       case 'TEXT_INPUT':
+        final input = element.input ?? const TextInputDef();
         final fieldRadius = element.rounding?.resolvedRadius(rect.width, rect.height) ?? 0;
         final field = RRect.fromRectAndRadius(rect, Radius.circular(fieldRadius));
         canvas.drawRRect(field, paint);
@@ -574,7 +620,23 @@ class _PagePainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1 / viewport.scale,
         );
-        final caretX = rect.left + math.min(10.0, rect.width / 8);
+        final shown = input.display();
+        final labelTop = rect.top + rect.height / 2 - 0.1514 * input.fontSize;
+        if (shown.isNotEmpty) {
+          _paintGlyphRun(
+            canvas,
+            text: shown,
+            font: element.font,
+            scale: input.fontSize,
+            lineWidth: element.lineWidth,
+            left: rect.left + input.padding,
+            top: labelTop,
+            color: input.value.isEmpty
+                ? const Color(0xFF6A6A7A)
+                : Color(0xFF000000 | element.color),
+          );
+        }
+        final caretX = rect.left + input.padding;
         final inset = rect.height * 0.28;
         canvas.drawLine(
           Offset(caretX, rect.top + inset),
@@ -584,22 +646,40 @@ class _PagePainter extends CustomPainter {
             ..strokeWidth = 1.5 / viewport.scale,
         );
       case 'TOGGLE':
+        final toggle = element.toggle ?? const ToggleDef();
         final trackRadius = rect.height / 2;
-        canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(trackRadius)), paint);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, Radius.circular(trackRadius)),
+          Paint()..color = Color(0xFF000000 | toggle.trackColor()).withValues(alpha: opacity),
+        );
         final knob = math.max(2.0, rect.height - 6);
+        final travel = math.max(0.0, rect.width - knob - 6);
         canvas.drawOval(
-          Rect.fromLTWH(rect.left + 3, rect.top + 3, knob, knob),
-          Paint()..color = Colors.white.withValues(alpha: 0.9),
+          Rect.fromLTWH(rect.left + 3 + (toggle.value ? travel : 0), rect.top + 3, knob, knob),
+          Paint()..color = Color(0xFF000000 | toggle.knobColor),
         );
       case 'SLIDER':
+        final slider = element.slider ?? const SliderDef();
         final trackHeight = math.max(2.0, rect.height * 0.35);
         final track = Rect.fromLTWH(
           rect.left, rect.top + (rect.height - trackHeight) / 2, rect.width, trackHeight);
         canvas.drawRRect(
-          RRect.fromRectAndRadius(track, Radius.circular(trackHeight / 2)), paint);
+          RRect.fromRectAndRadius(track, Radius.circular(trackHeight / 2)),
+          Paint()..color = Color(0xFF000000 | slider.trackColor).withValues(alpha: opacity),
+        );
+        final knob = math.max(trackHeight, rect.height);
+        final travel = math.max(0.0, rect.width - knob);
+        final filled = knob / 2 + travel * slider.fraction;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromLTWH(track.left, track.top, filled, trackHeight),
+            Radius.circular(trackHeight / 2),
+          ),
+          Paint()..color = Color(0xFF000000 | slider.fillColor).withValues(alpha: opacity),
+        );
         canvas.drawOval(
-          Rect.fromLTWH(rect.left, rect.top, rect.height, rect.height),
-          Paint()..color = Colors.white.withValues(alpha: 0.9),
+          Rect.fromLTWH(rect.left + travel * slider.fraction, rect.top, knob, knob),
+          Paint()..color = Color(0xFF000000 | slider.knobColor),
         );
       case 'BLUR':
         final blurRadius = element.rounding?.resolvedRadius(rect.width, rect.height) ?? 0;
@@ -625,36 +705,81 @@ class _PagePainter extends CustomPainter {
   }
 
   void _paintText(Canvas canvas, Element element, Rect rect, double opacity) {
-    const emAtUnitScale = 11.0;
-    const scaleUnit = 64.0;
-    const baselineFactor = 0.1514;
+    _paintGlyphRun(
+      canvas,
+      text: element.text,
+      font: element.font,
+      scale: element.height,
+      lineWidth: element.lineWidth,
+      left: rect.left,
+      top: rect.top,
+      color: Color(0xFF000000 | element.color).withValues(alpha: opacity),
+    );
+  }
 
-    final painter = TextPainter(
-      text: TextSpan(
-        text: element.text,
-        style: TextStyle(
-          fontFamily: canvasFontFamily,
-          fontSize: rect.height / scaleUnit * emAtUnitScale,
-          height: 1.2,
-          fontWeight: element.font.contains('semibold') ? FontWeight.w600 : FontWeight.w400,
-          color: Color(0xFF000000 | element.color).withValues(alpha: opacity),
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      textAlign: switch (element.textAlign) {
-        'LEFT' => TextAlign.left,
-        'RIGHT' => TextAlign.right,
-        _ => TextAlign.center,
-      },
-    )..layout(maxWidth: snapshot.screen.width);
+  void _paintGlyphRun(
+    Canvas canvas, {
+    required String text,
+    required String font,
+    required double scale,
+    required int lineWidth,
+    required double left,
+    required double top,
+    required Color color,
+  }) {
+    if (text.isEmpty) return;
+    final metrics = snapshot.metrics;
+    final perFontPixel = metrics.designPerFontPixel(scale);
+    final lines = metrics.wrap(font, text, lineWidth);
+    final lineHeight = metrics.font(font).lineHeight * perFontPixel;
 
-    final anchorY = rect.top + baselineFactor * rect.height;
-    final dx = switch (element.textAlign) {
-      'RIGHT' => rect.left - painter.width,
-      'CENTER' => rect.left - painter.width / 2,
-      _ => rect.left,
-    };
-    painter.paint(canvas, Offset(dx, anchorY - painter.height / 2));
+    final fontSize = scale / MetricsTable.scaleUnit * 11.0;
+    var y = top;
+
+    for (final line in lines) {
+      var pen = left;
+      for (final codepoint in line.runes) {
+        final advance = metrics.advanceOf(font, codepoint) * perFontPixel;
+        if (!metrics.covers(font, codepoint)) {
+          _paintMissingGlyph(canvas, pen, y, advance, lineHeight, color);
+          pen += advance;
+          continue;
+        }
+        final painter = TextPainter(
+          text: TextSpan(
+            text: String.fromCharCode(codepoint),
+            style: TextStyle(
+              fontFamily: canvasFontFamily,
+              fontSize: fontSize,
+              height: 1.0,
+              fontWeight: font.contains('semibold') ? FontWeight.w600 : FontWeight.w400,
+              color: color,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        painter.paint(canvas, Offset(pen + (advance - painter.width) / 2, y));
+        pen += advance;
+      }
+      y += lineHeight;
+    }
+  }
+
+  void _paintMissingGlyph(
+    Canvas canvas,
+    double x,
+    double y,
+    double width,
+    double height,
+    Color color,
+  ) {
+    canvas.drawRect(
+      Rect.fromLTWH(x, y, math.max(width - 1, 1), math.max(height - 1, 1)),
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = math.max(0.5, 1 / viewport.scale),
+    );
   }
 
   void _paintSelection(Canvas canvas, Element element) {
@@ -722,6 +847,7 @@ class _PagePainter extends CustomPainter {
       old.handlesOn != handlesOn ||
       old.hoveredId != hoveredId ||
       old.marquee != marquee ||
+      old.showHitRegions != showHitRegions ||
       !mapEquals(old.live, live) ||
       !mapEquals(old.thumbnails, thumbnails);
 }

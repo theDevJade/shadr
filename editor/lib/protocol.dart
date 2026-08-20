@@ -3,7 +3,7 @@ library;
 import 'dart:convert';
 import 'dart:ui' show Rect;
 
-const protocolVersion = 2;
+const protocolVersion = 3;
 
 const blurPanelLayer = -5000.0;
 
@@ -39,6 +39,10 @@ class ScreenDef {
     this.cursorSize = 10,
     this.cursorSpeed = 1,
     this.cursorLayer = 9700,
+    this.hitboxOffsetX = 0,
+    this.hitboxOffsetY = 0,
+    this.cursorUnicode = '',
+    this.previewDefaultZoom = 0.8,
   });
 
   final double width;
@@ -52,6 +56,11 @@ class ScreenDef {
   final double cursorSpeed;
   final double cursorLayer;
 
+  final double hitboxOffsetX;
+  final double hitboxOffsetY;
+  final String cursorUnicode;
+  final double previewDefaultZoom;
+
   static ScreenDef fromJson(Map<String, dynamic> json) => ScreenDef(
         width: (json['width'] as num?)?.toDouble() ?? 1920,
         height: (json['height'] as num?)?.toDouble() ?? 1080,
@@ -61,26 +70,43 @@ class ScreenDef {
         cursorSize: (json['cursorSize'] as num?)?.toDouble() ?? 10,
         cursorSpeed: (json['cursorSpeed'] as num?)?.toDouble() ?? 1,
         cursorLayer: (json['cursorLayer'] as num?)?.toDouble() ?? 9700,
+        hitboxOffsetX: (json['hitboxOffsetX'] as num?)?.toDouble() ?? 0,
+        hitboxOffsetY: (json['hitboxOffsetY'] as num?)?.toDouble() ?? 0,
+        cursorUnicode: (json['cursorUnicode'] as String?) ?? '',
+        previewDefaultZoom: (json['previewDefaultZoom'] as num?)?.toDouble() ?? 0.8,
       );
 }
 
 class Rounding {
-  const Rounding({required this.size, this.radius});
+  const Rounding({required this.size, this.radius, this.unicode});
 
   final String size;
   final double? radius;
+  final String? unicode;
 
   static Rounding? fromJson(Map<String, dynamic>? json) => json == null
       ? null
       : Rounding(
           size: (json['size'] as String?) ?? 'REGULAR',
           radius: (json['radius'] as num?)?.toDouble(),
+          unicode: json['unicode'] as String?,
         );
+
+  static const bucketCount = 32;
+  static const maxBucketFraction = 0.5;
+
+  static double quantise(double radius, double width, double height) {
+    final shorter = width < height ? width : height;
+    if (shorter <= 0) return 0;
+    final fraction = (radius / shorter).clamp(0.0, maxBucketFraction);
+    final bucket = (fraction / maxBucketFraction * (bucketCount - 1)).round();
+    return bucket * maxBucketFraction / (bucketCount - 1) * shorter;
+  }
 
   double resolvedRadius(double width, double height) {
     final shorter = width < height ? width : height;
     final explicit = radius;
-    if (explicit != null) return explicit.clamp(0.0, shorter / 2);
+    if (explicit != null) return quantise(explicit.clamp(0.0, shorter / 2), width, height);
     final preset = switch (size.toUpperCase()) {
       'NONE' => 0.0,
       'SMALL' => 4.0,
@@ -93,16 +119,283 @@ class Rounding {
 }
 
 class Outline {
-  const Outline({required this.size, required this.color});
+  const Outline({required this.size, required this.color, this.layer});
 
   final double size;
   final int color;
+  final double? layer;
 
   static Outline? fromJson(Map<String, dynamic>? json) => json == null
       ? null
       : Outline(
           size: (json['size'] as num?)?.toDouble() ?? 0,
           color: _colorOf(json['color']),
+          layer: (json['layer'] as num?)?.toDouble(),
+        );
+}
+
+class RenderBox {
+  const RenderBox(this.x, this.y, this.width, this.height, [this.rotationDeg = 0]);
+
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final double rotationDeg;
+
+  Rect get rect => Rect.fromLTWH(x, y, width, height);
+
+  static RenderBox? fromJson(Map<String, dynamic>? json) => json == null
+      ? null
+      : RenderBox(
+          (json['x'] as num?)?.toDouble() ?? 0,
+          (json['y'] as num?)?.toDouble() ?? 0,
+          (json['width'] as num?)?.toDouble() ?? 0,
+          (json['height'] as num?)?.toDouble() ?? 0,
+          (json['rotationDeg'] as num?)?.toDouble() ?? 0,
+        );
+}
+
+class ElementGeometry {
+  const ElementGeometry({required this.render, required this.hit, this.takesInput = false});
+
+  final RenderBox render;
+  final RenderBox hit;
+  final bool takesInput;
+
+  static ElementGeometry? fromJson(Map<String, dynamic>? json) {
+    if (json == null) return null;
+    final render = RenderBox.fromJson(json['render'] as Map<String, dynamic>?);
+    if (render == null) return null;
+    return ElementGeometry(
+      render: render,
+      hit: RenderBox.fromJson(json['hit'] as Map<String, dynamic>?) ?? render,
+      takesInput: (json['takesInput'] as bool?) ?? false,
+    );
+  }
+}
+
+class FontMetrics {
+  const FontMetrics({
+    required this.advance,
+    required this.ascent,
+    required this.descent,
+    required this.lineHeight,
+    this.advances = const {},
+    this.coverage = const [],
+  });
+
+  final double advance;
+  final double ascent;
+  final double descent;
+  final double lineHeight;
+  final Map<int, double> advances;
+  final List<List<int>> coverage;
+
+  double advanceOf(int codepoint) => advances[codepoint] ?? advance;
+
+  bool covers(int codepoint) =>
+      advances.containsKey(codepoint) ||
+      coverage.isEmpty ||
+      coverage.any((r) => codepoint >= r[0] && codepoint <= r[1]);
+
+  static FontMetrics fromJson(Map<String, dynamic> json) => FontMetrics(
+        advance: (json['advance'] as num?)?.toDouble() ?? 6,
+        ascent: (json['ascent'] as num?)?.toDouble() ?? 7,
+        descent: (json['descent'] as num?)?.toDouble() ?? 2,
+        lineHeight: (json['lineHeight'] as num?)?.toDouble() ?? 9,
+        advances: ((json['advances'] as Map<String, dynamic>?) ?? const {}).map(
+          (k, v) => MapEntry(int.parse(k), (v as num).toDouble()),
+        ),
+        coverage: ((json['coverage'] as List<dynamic>?) ?? const []).map((e) {
+          final r = e as Map<String, dynamic>;
+          return <int>[(r['from'] as num).toInt(), (r['to'] as num).toInt()];
+        }).toList(),
+      );
+}
+
+class MetricsTable {
+  const MetricsTable({this.fonts = const {}, this.missingGlyphAdvance = 6});
+
+  final Map<String, FontMetrics> fonts;
+  final double missingGlyphAdvance;
+
+  static const scaleUnit = 64.0;
+
+  static const empty = MetricsTable();
+
+  static const _fallback = FontMetrics(advance: 6, ascent: 7, descent: 2, lineHeight: 9);
+
+  FontMetrics font(String name) => fonts[name] ?? fonts['shadr'] ?? _fallback;
+
+  double designPerFontPixel(double scale) => scale / scaleUnit;
+
+  double _advanceFor(FontMetrics metrics, int codepoint) =>
+      metrics.covers(codepoint) ? metrics.advanceOf(codepoint) : missingGlyphAdvance;
+
+  double advanceOf(String name, int codepoint) => _advanceFor(font(name), codepoint);
+
+  bool covers(String name, int codepoint) => font(name).covers(codepoint);
+
+  double measure(String name, String text) {
+    final metrics = font(name);
+    var total = 0.0;
+    for (final codepoint in text.runes) {
+      total += _advanceFor(metrics, codepoint);
+    }
+    return total;
+  }
+
+  List<String> wrap(String name, String text, int lineWidth) {
+    final metrics = font(name);
+    final limit = (lineWidth < 1 ? 1 : lineWidth).toDouble();
+    final out = <String>[];
+    for (final paragraph in text.split('\n')) {
+      if (paragraph.isEmpty) {
+        out.add('');
+        continue;
+      }
+      var line = StringBuffer();
+      var width = 0.0;
+      var breakAt = -1;
+      var widthAtBreak = 0.0;
+      for (final codepoint in paragraph.runes) {
+        final advance = _advanceFor(metrics, codepoint);
+        if (width + advance > limit && line.length > 0) {
+          final text = line.toString();
+          if (breakAt >= 0) {
+            out.add(text.substring(0, breakAt));
+            line = StringBuffer(text.substring(breakAt + 1));
+            width -= widthAtBreak;
+          } else {
+            out.add(text);
+            line = StringBuffer();
+            width = 0;
+          }
+          breakAt = -1;
+          widthAtBreak = 0;
+        }
+        if (codepoint == 0x20) {
+          // A break drops its space, so one starting a line is discarded, not carried.
+          if (line.length == 0) continue;
+          breakAt = line.length;
+          widthAtBreak = width + advance;
+        }
+        line.writeCharCode(codepoint);
+        width += advance;
+      }
+      out.add(line.toString());
+    }
+    return out;
+  }
+
+  static MetricsTable fromJson(Map<String, dynamic>? json) {
+    if (json == null) return empty;
+    return MetricsTable(
+      fonts: ((json['fonts'] as Map<String, dynamic>?) ?? const {}).map(
+        (k, v) => MapEntry(k, FontMetrics.fromJson(v as Map<String, dynamic>)),
+      ),
+      missingGlyphAdvance: (json['missingGlyphAdvance'] as num?)?.toDouble() ?? 6,
+    );
+  }
+}
+
+class TextInputDef {
+  const TextInputDef({
+    this.placeholder = '',
+    this.value = '',
+    this.maxLength = 60,
+    this.lines = 1,
+    this.secret = false,
+    this.fontSize = 32,
+    this.padding = 10,
+  });
+
+  final String placeholder;
+  final String value;
+  final int maxLength;
+  final int lines;
+  final bool secret;
+  final double fontSize;
+  final double padding;
+
+  String display() {
+    if (value.isEmpty) return placeholder;
+    return secret ? '\u2022' * value.length : value;
+  }
+
+  static TextInputDef? fromJson(Map<String, dynamic>? json) => json == null
+      ? null
+      : TextInputDef(
+          placeholder: (json['placeholder'] as String?) ?? '',
+          value: (json['value'] as String?) ?? '',
+          maxLength: (json['maxLength'] as num?)?.toInt() ?? 60,
+          lines: (json['lines'] as num?)?.toInt() ?? 1,
+          secret: (json['secret'] as bool?) ?? false,
+          fontSize: (json['fontSize'] as num?)?.toDouble() ?? 32,
+          padding: (json['padding'] as num?)?.toDouble() ?? 10,
+        );
+}
+
+class ToggleDef {
+  const ToggleDef({
+    this.value = false,
+    this.onColor = 0x4C8DFF,
+    this.offColor = 0x3A3A47,
+    this.knobColor = 0xF2F2F7,
+  });
+
+  final bool value;
+  final int onColor;
+  final int offColor;
+  final int knobColor;
+
+  int trackColor() => value ? onColor : offColor;
+
+  static ToggleDef? fromJson(Map<String, dynamic>? json) => json == null
+      ? null
+      : ToggleDef(
+          value: (json['value'] as bool?) ?? false,
+          onColor: _colorOf(json['onColor']),
+          offColor: _colorOf(json['offColor']),
+          knobColor: _colorOf(json['knobColor']),
+        );
+}
+
+class SliderDef {
+  const SliderDef({
+    this.value = 0,
+    this.min = 0,
+    this.max = 100,
+    this.step = 0,
+    this.trackColor = 0x3A3A47,
+    this.fillColor = 0x4C8DFF,
+    this.knobColor = 0xF2F2F7,
+  });
+
+  final double value;
+  final double min;
+  final double max;
+  final double step;
+  final int trackColor;
+  final int fillColor;
+  final int knobColor;
+
+  double get fraction {
+    final span = (max - min).abs() < 1e-9 ? 1.0 : max - min;
+    return ((value - min) / span).clamp(0.0, 1.0);
+  }
+
+  static SliderDef? fromJson(Map<String, dynamic>? json) => json == null
+      ? null
+      : SliderDef(
+          value: (json['value'] as num?)?.toDouble() ?? 0,
+          min: (json['min'] as num?)?.toDouble() ?? 0,
+          max: (json['max'] as num?)?.toDouble() ?? 100,
+          step: (json['step'] as num?)?.toDouble() ?? 0,
+          trackColor: _colorOf(json['trackColor']),
+          fillColor: _colorOf(json['fillColor']),
+          knobColor: _colorOf(json['knobColor']),
         );
 }
 
@@ -117,7 +410,12 @@ class Interaction {
     this.onClick = const [],
     this.onLeftClick = const [],
     this.onRightClick = const [],
+    this.hitboxOffsetX = 0,
+    this.hitboxOffsetY = 0,
   });
+
+  final double hitboxOffsetX;
+  final double hitboxOffsetY;
 
   final bool interactive;
   final bool disableHitbox;
@@ -159,6 +457,8 @@ class Interaction {
       onClick: _actions(json['onClick']),
       onLeftClick: _actions(json['onLeftClick']),
       onRightClick: _actions(json['onRightClick']),
+      hitboxOffsetX: (json['hitboxOffsetX'] as num?)?.toDouble() ?? 0,
+      hitboxOffsetY: (json['hitboxOffsetY'] as num?)?.toDouble() ?? 0,
     );
   }
 }
@@ -186,6 +486,18 @@ class Element {
     this.stream = false,
     this.sourcePath = '',
     this.interaction = const Interaction(),
+    this.unicode = '',
+    this.align = 'CENTER',
+    this.lineWidth = 200,
+    this.mirrorX = false,
+    this.mirrorY = false,
+    this.pivotOffsetX = 0,
+    this.pivotOffsetY = 0,
+    this.itemCustomModelData,
+    this.playerHeadText = false,
+    this.input,
+    this.toggle,
+    this.slider,
   });
 
   final String id;
@@ -214,6 +526,24 @@ class Element {
 
   final Interaction interaction;
 
+  final String unicode;
+
+  /// Anchors the element to a screen edge in game.
+  final String align;
+
+  final int lineWidth;
+
+  final bool mirrorX;
+  final bool mirrorY;
+  final double pivotOffsetX;
+  final double pivotOffsetY;
+  final int? itemCustomModelData;
+  final bool playerHeadText;
+
+  final TextInputDef? input;
+  final ToggleDef? toggle;
+  final SliderDef? slider;
+
   String? get parentPath {
     for (final separator in const ['.children.', '.grid/']) {
       final cut = sourcePath.lastIndexOf(separator);
@@ -234,7 +564,7 @@ class Element {
   double get effectiveLayer => isBlur ? blurPanelLayer : layer;
 
   bool get supportsRounding =>
-      type == 'BLOCK' || type == 'BLOCK_ROUNDED' || type == 'BLOCK_SDF' || isBlur || isControl;
+      type == 'BLOCK' || type == 'BLOCK_ROUNDED' || type == 'BLOCK_SDF' || isControl;
 
   bool get isRounded =>
       supportsRounding && (rounding?.resolvedRadius(width, height) ?? 0) > 0;
@@ -263,6 +593,18 @@ class Element {
         stream: (json['stream'] as bool?) ?? false,
         sourcePath: (json['sourcePath'] as String?) ?? '',
         interaction: Interaction.fromJson(json['interaction'] as Map<String, dynamic>?),
+        unicode: (json['unicode'] as String?) ?? '',
+        align: (json['hudAlignment'] as String?) ?? 'CENTER',
+        lineWidth: (json['lineWidth'] as num?)?.toInt() ?? 200,
+        mirrorX: (json['mirrorX'] as bool?) ?? false,
+        mirrorY: (json['mirrorY'] as bool?) ?? false,
+        pivotOffsetX: (json['pivotOffsetX'] as num?)?.toDouble() ?? 0,
+        pivotOffsetY: (json['pivotOffsetY'] as num?)?.toDouble() ?? 0,
+        itemCustomModelData: (json['itemCustomModelData'] as num?)?.toInt(),
+        playerHeadText: (json['playerHeadText'] as bool?) ?? false,
+        input: TextInputDef.fromJson(json['input'] as Map<String, dynamic>?),
+        toggle: ToggleDef.fromJson(json['toggle'] as Map<String, dynamic>?),
+        slider: SliderDef.fromJson(json['slider'] as Map<String, dynamic>?),
       );
 }
 
@@ -354,6 +696,15 @@ class AnimationDef {
       );
 }
 
+Map<String, ElementGeometry> _geometryOf(dynamic raw) {
+  final out = <String, ElementGeometry>{};
+  for (final entry in ((raw as Map<String, dynamic>?) ?? const {}).entries) {
+    final geometry = ElementGeometry.fromJson(entry.value as Map<String, dynamic>?);
+    if (geometry != null) out[entry.key] = geometry;
+  }
+  return out;
+}
+
 class PageSnapshot {
   const PageSnapshot({
     required this.name,
@@ -367,6 +718,9 @@ class PageSnapshot {
     required this.animations,
     required this.previewTick,
     required this.kind,
+    this.geometry = const {},
+    this.metrics = MetricsTable.empty,
+    this.actionVerbs = const [],
   });
 
   final String name;
@@ -381,6 +735,22 @@ class PageSnapshot {
   final int? previewTick;
   final DocumentKind kind;
 
+  final Map<String, ElementGeometry> geometry;
+
+  final MetricsTable metrics;
+
+  final List<String> actionVerbs;
+
+  ElementGeometry? geometryOf(String id) => geometry[id];
+
+  Rect renderRectOf(Element element) =>
+      geometry[element.id]?.render.rect ?? element.bounds;
+
+  Rect hitRectOf(Element element) => geometry[element.id]?.hit.rect ?? element.bounds;
+
+  double rotationOf(Element element) =>
+      geometry[element.id]?.render.rotationDeg ?? element.rotationDeg;
+
   static PageSnapshot fromJson(Map<String, dynamic> json) => PageSnapshot(
         name: json['name'] as String,
         screen: ScreenDef.fromJson(json['screen'] as Map<String, dynamic>),
@@ -392,6 +762,11 @@ class PageSnapshot {
             .toList(),
         locked: ((json['locked'] as Map<String, dynamic>?) ?? const {})
             .map((k, v) => MapEntry(k, v.toString())),
+        geometry: _geometryOf(json['geometry']),
+        metrics: MetricsTable.fromJson(json['metrics'] as Map<String, dynamic>?),
+        actionVerbs: ((json['actionVerbs'] as List<dynamic>?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
         canUndo: (json['canUndo'] as bool?) ?? false,
         canRedo: (json['canRedo'] as bool?) ?? false,
         dirty: (json['dirty'] as bool?) ?? false,
@@ -589,6 +964,51 @@ String duplicateFrom(String id, String to) =>
 
 String deleteShader(String id) => jsonEncode({'t': 'deleteShader', 'id': id});
 
+class EnvironmentParam {
+  const EnvironmentParam({
+    required this.key,
+    required this.label,
+    required this.type,
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.step,
+    this.defaultValue = 0,
+    this.options = const [],
+    this.group = '',
+  });
+
+  final String key;
+  final String label;
+  final String type;
+  final double value;
+  final double defaultValue;
+  final double min;
+  final double max;
+  final double step;
+  final List<String> options;
+  final String group;
+
+  bool get isColor => type == 'COLOR';
+  bool get isBool => type == 'BOOL';
+  bool get isEnum => type == 'ENUM';
+
+  static EnvironmentParam fromJson(Map<String, dynamic> json) => EnvironmentParam(
+        key: json['key'] as String,
+        label: (json['label'] as String?) ?? json['key'] as String,
+        type: (json['type'] as String?) ?? 'FLOAT',
+        value: (json['value'] as num?)?.toDouble() ?? 0,
+        defaultValue: (json['default'] as num?)?.toDouble() ?? 0,
+        min: (json['min'] as num?)?.toDouble() ?? 0,
+        max: (json['max'] as num?)?.toDouble() ?? 1,
+        step: (json['step'] as num?)?.toDouble() ?? 0.01,
+        options: ((json['options'] as List<dynamic>?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
+        group: (json['group'] as String?) ?? '',
+      );
+}
+
 class EnvironmentEffect {
   const EnvironmentEffect({
     required this.id,
@@ -596,6 +1016,9 @@ class EnvironmentEffect {
     required this.description,
     required this.enabled,
     this.programs = const [],
+    this.worldEffect = false,
+    this.params = const [],
+    this.presets = const [],
   });
 
   final String id;
@@ -605,6 +1028,19 @@ class EnvironmentEffect {
 
   final List<EnvironmentProgram> programs;
 
+  final bool worldEffect;
+
+  final List<EnvironmentParam> params;
+  final List<String> presets;
+
+  List<String> get groups {
+    final seen = <String>[];
+    for (final param in params) {
+      if (!seen.contains(param.group)) seen.add(param.group);
+    }
+    return seen;
+  }
+
   static EnvironmentEffect fromJson(Map<String, dynamic> json) => EnvironmentEffect(
         id: json['id'] as String,
         title: (json['title'] as String?) ?? json['id'] as String,
@@ -613,11 +1049,24 @@ class EnvironmentEffect {
         programs: ((json['programs'] as List<dynamic>?) ?? const [])
             .map((e) => EnvironmentProgram.fromJson(e as Map<String, dynamic>))
             .toList(),
+        worldEffect: (json['worldEffect'] as bool?) ?? false,
+        params: ((json['params'] as List<dynamic>?) ?? const [])
+            .map((e) => EnvironmentParam.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        presets: ((json['presets'] as List<dynamic>?) ?? const [])
+            .map((e) => e.toString())
+            .toList(),
       );
 }
 
 String setEnvironmentEffect(String id, bool enabled) =>
     jsonEncode({'t': 'setEnvironment', 'id': id, 'enabled': enabled});
+
+String setEnvironmentParam(String id, String key, double value) =>
+    jsonEncode({'t': 'setEnvironmentParam', 'id': id, 'key': key, 'value': value});
+
+String applyEnvironmentPreset(String id, String preset) =>
+    jsonEncode({'t': 'applyEnvironmentPreset', 'id': id, 'preset': preset});
 
 class EnvironmentProgram {
   const EnvironmentProgram({required this.path, required this.customised});

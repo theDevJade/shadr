@@ -41,7 +41,22 @@ Essentially, vertex reprojection below a threshold, along with SDF math. Shadr u
 - [ ] World-space UI
 - [x] Multi-version support: Paper 1.21.6 through 26.2. SDF shapes, text, items, images,
       custom item shaders and frosted-glass blur render on every supported version; video, streaming and the sky, cloud and celestial overrides are 26.2 only
-- [ ] Improve editor consistency
+- [x] Improve editor consistency: interaction model improved
+      editor those rectangles, so the preview and the game cannot drift apart
+- [x] World effects: colour grading, bloom, god rays, SSAO, screen space reflections,
+      volumetric fog and a full water surface
+
+## World effects
+
+Toggle these in the editor, or with `/shadr effects`:
+
+    /shadr effects - list everything and its state
+    /shadr effects grading - show one effect's settings
+    /shadr effects grading enabled true
+    /shadr effects grading preset cinematic
+    /shadr effects grading exposure 0.15
+
+Grading presets are in `shaders/grading/*.yml`.
 
 
 ## Running it

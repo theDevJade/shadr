@@ -235,6 +235,21 @@ class EditorModel extends ChangeNotifier {
   void setEnvironment(String id, bool enabled) =>
       _send(setEnvironmentEffect(id, enabled));
 
+  void setEnvironmentValue(String id, String key, double value) =>
+      _send(setEnvironmentParam(id, key, value));
+
+  void applyEnvironmentGrade(String id, String preset) =>
+      _send(applyEnvironmentPreset(id, preset));
+
+  bool _showHitRegions = false;
+
+  bool get showHitRegions => _showHitRegions;
+
+  void toggleHitRegions() {
+    _showHitRegions = !_showHitRegions;
+    notifyListeners();
+  }
+
   String? _openProgramPath;
   String? get openProgramPath => _openProgramPath;
 
@@ -565,10 +580,28 @@ class EditorModel extends ChangeNotifier {
     return best;
   }
 
-  bool _covers(Element element, Offset design) {
-    final rect = boundsOf(element);
-    if (element.rotationDeg == 0) return rect.contains(design);
-    final radians = -element.rotationDeg * math.pi / 180;
+  /// Where the player would have to click.
+  Element? gameHitTest(Offset design) {
+    final snapshot = _snapshot;
+    if (snapshot == null) return null;
+    Element? best;
+    for (final element in snapshot.elements) {
+      if (!element.enabled) continue;
+      final geometry = snapshot.geometryOf(element.id);
+      if (geometry == null || !geometry.takesInput) continue;
+      if (!_containsRotated(hitBoundsOf(element), geometry.hit.rotationDeg, design)) continue;
+      // The server keeps the first of an equal layer, because equal layers z-fight in game.
+      if (best == null || element.effectiveLayer > best.effectiveLayer) best = element;
+    }
+    return best;
+  }
+
+  bool _covers(Element element, Offset design) =>
+      _containsRotated(renderBoundsOf(element), _snapshot?.rotationOf(element) ?? 0, design);
+
+  bool _containsRotated(Rect rect, double rotationDeg, Offset design) {
+    if (rotationDeg == 0) return rect.contains(design);
+    final radians = -rotationDeg * math.pi / 180;
     final local = design - rect.center;
     final rotated = Offset(
       local.dx * math.cos(radians) - local.dy * math.sin(radians),
@@ -657,6 +690,25 @@ class EditorModel extends ChangeNotifier {
   Map<String, Rect> get liveRects => UnmodifiableMapView(_live);
 
   Rect boundsOf(Element element) => _live[element.id] ?? element.bounds;
+
+  /// What the element paints.
+  Rect renderBoundsOf(Element element) {
+    final moved = _live[element.id];
+    final snapshot = _snapshot;
+    if (snapshot == null) return moved ?? element.bounds;
+    final render = snapshot.renderRectOf(element);
+    if (moved == null) return render;
+    return render.shift(moved.topLeft - element.bounds.topLeft);
+  }
+
+  Rect hitBoundsOf(Element element) {
+    final moved = _live[element.id];
+    final snapshot = _snapshot;
+    if (snapshot == null) return moved ?? element.bounds;
+    final hit = snapshot.hitRectOf(element);
+    if (moved == null) return hit;
+    return hit.shift(moved.topLeft - element.bounds.topLeft);
+  }
 
   void beginResize(ResizeHandle handle) {
     final element = soleSelection;

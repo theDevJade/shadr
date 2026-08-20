@@ -117,7 +117,7 @@ public final class Server {
             final UiSession session = sessions.get(player.getUuid());
             if (session == null) return;
             if (session.setInputValue(elementId, value)) {
-                bridge.hud().apply(player, session.draws());
+                applyHud(player, session.draws());
             }
         });
         textCapture.onLog(message -> System.out.println("[shadr] " + message));
@@ -138,7 +138,7 @@ public final class Server {
                 openFocusedInput(sample.getPlayer(), session);
                 clicked = true;
             }
-            if (changed || clicked) bridge.hud().apply(sample.getPlayer(), session.draws());
+            if (changed || clicked) applyHud(sample.getPlayer(), session.draws());
             return kotlin.Unit.INSTANCE;
         });
 
@@ -150,7 +150,12 @@ public final class Server {
         events.addListener(PlayerSpawnEvent.class, event -> {
             final Player player = event.getPlayer();
             player.setGameMode(GameMode.CREATIVE);
-            sendPack(new PlayerId(player.getUuid().toString()));
+            final PlayerId spawned = new PlayerId(player.getUuid().toString());
+            sendPack(spawned);
+            if (worldEffectsActive()) {
+                bridge.hud().mount(spawned);
+                applyHud(spawned, java.util.List.of());
+            }
             player.sendMessage(Component.text(
                     "shadr: /ui <page> to open a page, /editor for a browser link."));
         });
@@ -245,7 +250,7 @@ public final class Server {
                     new CursorPredictor(),
                     placeholdersFor(id));
             sessions.put(id.getUuid(), session);
-            bridge.hud().apply(id, session.draws());
+            applyHud(id, session.draws());
             startStreamIfNeeded(id, page);
             System.out.println("[shadr] UI open for " + player.getUsername()
                     + " on page '" + page.getName() + "'");
@@ -297,7 +302,7 @@ public final class Server {
         session.openPage(next);
         System.out.println("[shadr] switched to page '" + name + "' (hud="
                 + next.getScreen().getHud() + ")");
-        applyCameraFor(player, next, () -> bridge.hud().apply(player, session.draws()));
+        applyCameraFor(player, next, () -> applyHud(player, session.draws()));
         startStreamIfNeeded(player, next);
     }
 
@@ -600,7 +605,7 @@ public final class Server {
                     for (Map.Entry<String, UiSession> open : sessions.entrySet()) {
                         if (!open.getValue().getCurrentPage().getName().equals(edited.getName())) continue;
                         open.getValue().refreshPage(edited);
-                        bridge.hud().apply(new PlayerId(open.getKey()), open.getValue().draws());
+                        applyHud(new PlayerId(open.getKey()), open.getValue().draws());
                     }
                     return kotlin.Unit.INSTANCE;
                 },
@@ -841,6 +846,32 @@ public final class Server {
         return sources;
     }
 
+    private static boolean worldEffectsActive() {
+        return !ENVIRONMENT.activeWorldEffects().isEmpty();
+    }
+
+    private static void refreshHeaderEmitters() {
+        if (bridge == null) return;
+        for (Player online : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
+            final PlayerId id = new PlayerId(online.getUuid().toString());
+            final UiSession session = sessions.get(id.getUuid());
+            if (session == null) {
+                if (worldEffectsActive()) {
+                    bridge.hud().mount(id);
+                    applyHud(id, java.util.List.of());
+                }
+            } else {
+                applyHud(id, session.draws());
+            }
+        }
+    }
+
+    private static void applyHud(PlayerId player, java.util.List<dev.shadr.core.hud.HudDraw> draws) {
+        final java.util.List<dev.shadr.core.hud.HudDraw> all = new java.util.ArrayList<>(draws);
+        all.addAll(dev.shadr.core.hud.HeaderEmitter.INSTANCE.draws(worldEffectsActive()));
+        bridge.hud().apply(player, all);
+    }
+
     private static String nameWithoutExtension(String name) {
         final int dot = name.lastIndexOf('.');
         return dot < 0 ? name : name.substring(0, dot);
@@ -856,6 +887,7 @@ public final class Server {
                         false,
                         SHADERS.load(),
                         ENVIRONMENT.all(),
+                        ENVIRONMENT.allParams(),
                         videoSources(),
                         STREAM,
                         true)
@@ -872,6 +904,7 @@ public final class Server {
             }
         }
         System.out.println("[shadr] pack rebuilt (" + packZip.length + " bytes, sha1=" + packSha1 + ")");
+        MinecraftServer.getSchedulerManager().scheduleNextTick(Server::refreshHeaderEmitters);
         MinecraftServer.getSchedulerManager().scheduleNextTick(() -> {
             for (Player player : MinecraftServer.getConnectionManager().getOnlinePlayers()) {
                 sendPack(new PlayerId(player.getUuid().toString()));

@@ -139,6 +139,22 @@ class PaperInput(private val plugin: Plugin, private val camera: ShadrCamera) : 
     private val listeners = mutableListOf<(InputSample) -> Unit>()
     private val keyListeners = mutableMapOf<String, MutableList<(PlayerId) -> Unit>>()
     private val mappers = mutableMapOf<UUID, LookMapper>()
+
+    private val mapperShapes = mutableMapOf<UUID, CursorShape>()
+
+    var screenFor: ((PlayerId) -> dev.shadr.core.page.ScreenDef?)? = null
+
+    data class CursorShape(val width: Double, val height: Double, val speed: Double) {
+        fun mapper() = LookMapper(width, height, speed)
+
+        companion object {
+            val DEFAULT = CursorShape(1920.0, 1080.0, 1.0)
+
+            fun of(screen: dev.shadr.core.page.ScreenDef?): CursorShape = screen?.let {
+                CursorShape(it.width, it.height, it.cursorSpeed)
+            } ?: DEFAULT
+        }
+    }
     private val pendingClicks = mutableMapOf<UUID, Boolean>()
 
     override fun onSample(listener: (InputSample) -> Unit) {
@@ -156,6 +172,7 @@ class PaperInput(private val plugin: Plugin, private val camera: ShadrCamera) : 
     fun forget(player: PlayerId) {
         val uuid = UUID.fromString(player.uuid)
         mappers.remove(uuid)
+        mapperShapes.remove(uuid)
         pendingClicks.remove(uuid)
     }
 
@@ -165,8 +182,17 @@ class PaperInput(private val plugin: Plugin, private val camera: ShadrCamera) : 
             if (!camera.isActive(id)) continue
             camera.follow(player)
 
-            val mapper = mappers.getOrPut(player.uniqueId) {
-                LookMapper().also { it.reset(yaw = player.location.yaw) }
+            val shape = CursorShape.of(screenFor?.invoke(id))
+            val mapper = if (mapperShapes[player.uniqueId] != shape) {
+                mapperShapes[player.uniqueId] = shape
+                shape.mapper().also {
+                    it.reset(yaw = player.location.yaw)
+                    mappers[player.uniqueId] = it
+                }
+            } else {
+                mappers.getOrPut(player.uniqueId) {
+                    shape.mapper().also { it.reset(yaw = player.location.yaw) }
+                }
             }
             val cursor: ScreenPos = mapper.sample(player.location.yaw, player.location.pitch)
             val click = pendingClicks.remove(player.uniqueId)
@@ -185,7 +211,10 @@ class PaperInput(private val plugin: Plugin, private val camera: ShadrCamera) : 
     fun mapperFor(player: PlayerId): LookMapper? = mappers[UUID.fromString(player.uuid)]
 
     fun resetMapper(player: PlayerId, atYaw: Float) {
-        mappers[UUID.fromString(player.uuid)] = LookMapper().also { it.reset(yaw = atYaw) }
+        val uuid = UUID.fromString(player.uuid)
+        val shape = mapperShapes[uuid] ?: CursorShape.of(screenFor?.invoke(player))
+        mapperShapes[uuid] = shape
+        mappers[uuid] = shape.mapper().also { it.reset(yaw = atYaw) }
     }
 }
 

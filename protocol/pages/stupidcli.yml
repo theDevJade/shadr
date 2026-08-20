@@ -19,8 +19,8 @@ blocks:
     id: title
     layer: 5.0
     color: f2f2f7
-    position: {x: 697.9999999999999, y: -14}
-    size: {width: 524.0000000000001, height: 568}
+    position: {x: 698, y: -14}
+    size: {width: 524, height: 568}
     text: "stupidcli"
     font: shadr_sharp_semibold
     textAlign: center
@@ -39,7 +39,7 @@ blocks:
       size: regular
       radius: 50
     onClickAction:
-      - sound.shadr.click: ''
+      - "sound: shadr.click"
   - type: text
     id: el_text_4
     layer: 7
@@ -58,6 +58,6 @@ animations:
       - target: title
         axis: width
         easing: ease-in
-        from: 524.0000000000001
+        from: 524
         to: 600
         duration: 20

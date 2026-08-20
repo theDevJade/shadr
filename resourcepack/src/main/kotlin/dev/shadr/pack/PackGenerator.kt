@@ -19,6 +19,8 @@ class PackGenerator(
     private val shapeSupport: Boolean = false,
     private val shaders: dev.shadr.core.shader.ShaderRegistry = dev.shadr.core.shader.ShaderRegistry.EMPTY,
     private val environment: Map<dev.shadr.core.shader.EnvironmentEffect, Boolean>,
+    private val environmentParams: Map<dev.shadr.core.shader.EnvironmentEffect, Map<String, Double>> =
+        emptyMap(),
     private val videos: List<VideoAssets.Source> = emptyList(),
     private val stream: dev.shadr.core.stream.StreamGeometry? = null,
     private val hideAnvilScreen: Boolean = true,
@@ -26,6 +28,9 @@ class PackGenerator(
     val overrides = mutableListOf<String>()
 
     val gaps = mutableListOf<Gap>()
+
+    var metrics: dev.shadr.core.text.MetricsTable = dev.shadr.core.text.MetricsTable.EMPTY
+        private set
 
     data class Gap(
         val overlay: PackOverlay,
@@ -46,7 +51,8 @@ class PackGenerator(
 
         writePackMeta(outRoot)
         writePackIcon(outRoot)
-        FontAssets.writeAll(outRoot, fontDir)
+        metrics = FontAssets.writeAll(outRoot, fontDir)
+        writeMetrics(outRoot)
         ShapeAssets.writeAll(outRoot)
         ItemShaderAssets.writeAll(outRoot, shaders)
         VideoAssets.writeAll(outRoot, videos)
@@ -90,6 +96,14 @@ class PackGenerator(
             |}
             |
             """.trimMargin(),
+        )
+    }
+
+    private fun writeMetrics(root: File) {
+        write(
+            root, METRICS_FILE,
+            kotlinx.serialization.json.Json { prettyPrint = true; encodeDefaults = true }
+                .encodeToString(dev.shadr.core.text.MetricsTable.serializer(), metrics) + LINE_END,
         )
     }
 
@@ -181,8 +195,7 @@ class PackGenerator(
                 val custom = File(File(shaderSrc, "custom"), dir)
                 if (!custom.isDirectory) continue
                 custom.walkTopDown().filter { it.isFile }.forEach { file ->
-                    val rel = file.relativeTo(custom).path
-                    overrides += "${overlay.directory}/$rel"
+                    overrides += "${overlay.directory}/${file.relativeTo(custom).invariantPath}"
                 }
                 copyTree(custom, assets)
             }
@@ -221,7 +234,41 @@ class PackGenerator(
             }
 
             writeVideoChain(assets, overlay)
+            writeWorldChain(assets, overlay)
         }
+    }
+
+    private fun writeWorldChain(assets: File, overlay: PackOverlay) {
+        val active = dev.shadr.core.shader.EnvironmentEffect.worldEffects
+            .filter { environment[it] == true }
+            .associateWith { effect ->
+                environmentParams[effect] ?: effect.defaults()
+            }
+        val chainFile = assetFor(assets, dev.shadr.core.shader.PostChains.WORLD_HOST_PATH)
+        if (active.isEmpty()) {
+            chainFile.delete()
+            return
+        }
+
+        val missing = active.keys.flatMap { it.programs }.distinct()
+            .filterNot { assetFor(assets, it).isFile }
+        if (missing.isNotEmpty()) {
+            gaps += Gap(
+                overlay = overlay,
+                feature = "world effects (" + active.keys.joinToString { it.id } + ")",
+                missing = missing,
+                consequence = "these clients see the world untouched",
+            )
+            chainFile.delete()
+            return
+        }
+
+        val composed = WorldChainBuilder.compose(chainFile.readText(), active) ?: run {
+            chainFile.delete()
+            return
+        }
+        chainFile.parentFile.mkdirs()
+        chainFile.writeText(composed)
     }
 
     private fun writeVideoChain(assets: File, overlay: PackOverlay) {
@@ -384,5 +431,9 @@ class PackGenerator(
 
     companion object {
         const val POST_EFFECT_DIR = "post_effect"
+
+        const val METRICS_FILE = "shadr-metrics.json"
+
+        private const val LINE_END = "\u000A"
     }
 }

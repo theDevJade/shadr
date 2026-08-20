@@ -53,6 +53,7 @@ fun main(args: Array<String>) {
         shapeSupport = args.contains("--shapes"),
         shaders = shaders,
         environment = environment.all(),
+        environmentParams = environment.allParams(),
         videos = videos.sources,
         stream = stream,
     )

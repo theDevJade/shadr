@@ -28,11 +28,21 @@ out vec4 vertexColor;
 out vec2 texCoord0;
 
 #moj_import <hud.glsl>
+#moj_import <shadr_header_vertex.glsl>
 #moj_import <shadr_stream_vertex.glsl>
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
     texCoord0 = UV0;
+
+    if (shadr_header_place()) {
+        vertexColor = vec4(1.0);
+#if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
+        sphericalVertexDistance = 0.0;
+        cylindricalVertexDistance = 0.0;
+#endif
+        return;
+    }
 
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
     if (shadr_stream_place(Sampler0, UV0)) {

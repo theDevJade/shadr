@@ -5,6 +5,8 @@
 #endif
 
 #moj_import <minecraft:dynamictransforms.glsl>
+#moj_import <minecraft:projection.glsl>
+#moj_import <minecraft:globals.glsl>
 
 uniform sampler2D Sampler0;
 
@@ -19,9 +21,20 @@ in vec2 texCoord0;
 out vec4 fragColor;
 
 #moj_import <hud_fragment.glsl>
+#moj_import <shadr_header.glsl>
 
 void main() {
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)
+    if (shadr_has_mode(16.0)) {
+        vec2 f = gl_FragCoord.xy;
+        if (f.x >= float(SHADR_HEADER_PIXELS) || f.y >= 1.0) discard;
+        mat3 view = mat3(ModelViewMat);
+        view[0] = normalize(view[0]);
+        view[1] = normalize(view[1]);
+        view[2] = normalize(view[2]);
+        fragColor = shadr_header_write(vec4(0.0, 0.0, 0.0, 1.0), f, view, ProjMat, GameTime);
+        return;
+    }
     if (shadr_is_stream()) {
         fragColor = vec4(texture(Sampler0, texCoord0).rgb, 1.0);
         return;

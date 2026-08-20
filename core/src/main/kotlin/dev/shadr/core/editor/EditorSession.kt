@@ -24,7 +24,11 @@ import dev.shadr.core.page.ScreenDef
 class EditorSession(
     initial: Page,
     private val undoLimit: Int = 50,
+    private val metrics: dev.shadr.core.text.MetricsTable = dev.shadr.core.text.MetricsTable.EMPTY,
+    private val actionVerbs: List<String> = dev.shadr.core.action.ActionVerb.entries.map { it.id },
 ) {
+    private val renderer = dev.shadr.core.hud.PageRenderer(metrics = metrics, debugHitboxes = true)
+
     var page: Page = initial
         private set
 
@@ -61,10 +65,23 @@ class EditorSession(
         issues: List<String> = emptyList(),
         kind: DocumentKind = DocumentKind.PAGE,
     ): PageSnapshot = rendered.let { frame ->
+        val drawn = renderer.render(frame)
+        val hits = drawn.hitRegions.associateBy { it.elementId }
         PageSnapshot(
         name = frame.name,
         screen = frame.screen,
         elements = frame.elements,
+        geometry = frame.elements.mapNotNull { element ->
+            val box = drawn.renderBoxes[element.id] ?: return@mapNotNull null
+            val hit = hits[element.id]
+            element.id to ElementGeometry(
+                render = box,
+                hit = hit?.toBox() ?: box,
+                takesInput = hit?.interactive ?: false,
+            )
+        }.toMap(),
+        metrics = metrics,
+        actionVerbs = actionVerbs,
         issues = issues,
         locked = original.elements.map { it.id }.toSet().let { known ->
             frame.elements.mapNotNull { element ->

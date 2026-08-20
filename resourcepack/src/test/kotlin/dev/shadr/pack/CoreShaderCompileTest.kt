@@ -65,6 +65,15 @@ class CoreShaderCompileTest {
         vec4 apply_fog(vec4 c, float a, float b, float d, float e, float f, float g, vec4 h) { return c; }
     """.trimIndent()
 
+    private val chunkSectionInclude = """
+        layout(std140) uniform ChunkSection {
+            mat4 ModelViewMat;
+            float ChunkVisibility;
+            ivec2 TextureSize;
+            ivec3 ChunkPosition;
+        };
+    """.trimIndent()
+
     private val projectionInclude = """
         layout(std140) uniform Projection {
             mat4 ProjMat;
@@ -113,6 +122,7 @@ class CoreShaderCompileTest {
             perFaceLighting = newLight,
             includes = buildMap {
                 put("globals.glsl", globals(camera))
+                put("chunksection.glsl", chunkSectionInclude)
                 put("projection.glsl", projectionInclude)
                 put("dynamictransforms.glsl", dynamicTransforms(lineWidth))
                 put("fog.glsl", fogInclude)
@@ -195,6 +205,7 @@ class CoreShaderCompileTest {
                 listOf("IS_SEE_THROUGH"),
             )
             name == "item" -> listOf(emptyList(), listOf("ALPHA_CUTOUT 0.1"), listOf("NO_CARDINAL_LIGHTING"))
+            name == "terrain" -> listOf(emptyList(), listOf("ALPHA_CUTOUT 0.1"))
             name == "entity" -> listOf(emptyList(), listOf("NO_CARDINAL_LIGHTING"), listOf("EMISSIVE"))
             else -> listOf(emptyList())
         }

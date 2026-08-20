@@ -78,6 +78,23 @@ data class EnvironmentEffectState(
     val description: String,
     val enabled: Boolean,
     val programs: List<EnvironmentProgram> = emptyList(),
+    val worldEffect: Boolean = false,
+    val params: List<EnvironmentParamState> = emptyList(),
+    val presets: List<String> = emptyList(),
+)
+
+@Serializable
+data class EnvironmentParamState(
+    val key: String,
+    val label: String,
+    val type: dev.shadr.core.shader.EffectParamType,
+    val value: Double,
+    val default: Double,
+    val min: Double,
+    val max: Double,
+    val step: Double,
+    val options: List<String> = emptyList(),
+    val group: String = "",
 )
 
 @Serializable
@@ -109,6 +126,14 @@ data class RevertProgram(val path: String) : EditorMessage
 @Serializable
 @SerialName("setEnvironment")
 data class SetEnvironmentEffect(val id: String, val enabled: Boolean) : EditorMessage
+
+@Serializable
+@SerialName("setEnvironmentParam")
+data class SetEnvironmentParam(val id: String, val key: String, val value: Double) : EditorMessage
+
+@Serializable
+@SerialName("applyEnvironmentPreset")
+data class ApplyEnvironmentPreset(val id: String, val preset: String) : EditorMessage
 
 @Serializable
 data class ImageEntry(

@@ -50,6 +50,26 @@ class HudPositionCalculator {
         return Placement(location, scale)
     }
 
+    fun placementDelta(ownerWidth: Double, ownerHeight: Double): dev.shadr.core.Vec2 {
+        val ownerW = max(1.0, ownerWidth)
+        val ownerH = max(1.0, ownerHeight)
+        val leftCompensation = ownerW * YAML_TO_HUD_SIZE_FACTOR / BOX_LEFT_COMP_DIVISOR
+        val topCompensation = ownerH * YAML_TO_HUD_SIZE_FACTOR / BOX_TOP_COMP_DIVISOR
+        val topDrift = max(0.0, (ownerH - BOX_TOP_DRIFT_START_HEIGHT) * BOX_TOP_DRIFT_PER_HEIGHT)
+        return dev.shadr.core.Vec2(
+            leftStepCorrection(ownerW) - leftCompensation,
+            topCompensation - topDrift,
+        )
+    }
+
+    fun designBox(
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+        rotationDeg: Double = 0.0,
+    ): RenderBox = RenderBox(x, y, max(1.0, width), max(1.0, height), rotationDeg)
+
     private fun leftStepCorrection(width: Double): Double {
         if (width <= BOX_LEFT_STEP_START_WIDTH) return 0.0
         val steps = floor((width - BOX_LEFT_STEP_START_WIDTH) / BOX_LEFT_STEP_PERIOD) + 1.0

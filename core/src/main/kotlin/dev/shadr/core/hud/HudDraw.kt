@@ -9,6 +9,9 @@ package dev.shadr.core.hud
 import dev.shadr.core.HudAlignment
 import dev.shadr.core.TextAlignment
 import dev.shadr.core.Vec3
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 
 data class HudDraw(
     val key: String,
@@ -38,6 +41,29 @@ data class HudDraw(
     val displayText: String get() = if (kind == Kind.TEXT) DisplayMeta.TEXT_LAYOUT_PREFIX + content else ""
 }
 
+@kotlinx.serialization.Serializable
+data class RenderBox(
+    val x: Double,
+    val y: Double,
+    val width: Double,
+    val height: Double,
+    val rotationDeg: Double = 0.0,
+) {
+    val centerX: Double get() = x + width / 2.0
+    val centerY: Double get() = y + height / 2.0
+
+    fun union(other: RenderBox): RenderBox {
+        if (rotationDeg != 0.0 || other.rotationDeg != 0.0) return this
+        val left = minOf(x, other.x)
+        val top = minOf(y, other.y)
+        val right = maxOf(x + width, other.x + other.width)
+        val bottom = maxOf(y + height, other.y + other.height)
+        return RenderBox(left, top, right - left, bottom - top)
+    }
+
+    fun translate(dx: Double, dy: Double): RenderBox = copy(x = x + dx, y = y + dy)
+}
+
 data class HitRegion(
     val elementId: String,
     val x: Double,
@@ -46,15 +72,29 @@ data class HitRegion(
     val height: Double,
     val layer: Double,
     val interactive: Boolean,
+    val rotationDeg: Double = 0.0,
 ) {
-    fun contains(px: Double, py: Double): Boolean =
-        px >= x && px <= x + width && py >= y && py <= y + height
+    fun contains(px: Double, py: Double): Boolean {
+        if (rotationDeg == 0.0) return px >= x && px <= x + width && py >= y && py <= y + height
+        val cx = x + width / 2.0
+        val cy = y + height / 2.0
+        val radians = Math.toRadians(-rotationDeg)
+        val dx = px - cx
+        val dy = py - cy
+        val lx = dx * cos(radians) - dy * sin(radians)
+        val ly = dx * sin(radians) + dy * cos(radians)
+        return abs(lx) <= width / 2.0 && abs(ly) <= height / 2.0
+    }
+
+    fun toBox(): RenderBox = RenderBox(x, y, width, height, rotationDeg)
 }
 
 data class RenderedPage(
     val draws: List<HudDraw>,
     val hitRegions: List<HitRegion>,
+    val renderBoxes: Map<String, RenderBox> = emptyMap(),
 ) {
+    /** Highest layer wins; equal layers are z-fighting in game, so the first declared is picked. */
     fun hitTest(x: Double, y: Double): HitRegion? =
         hitRegions.filter { it.interactive && it.contains(x, y) }.maxByOrNull { it.layer }
 }

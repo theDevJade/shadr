@@ -8,7 +8,7 @@ package dev.shadr.core.shader
 
 import java.io.File
 
-class EnvironmentSource(private val shaderRoot: File) {
+class EnvironmentSource(val shaderRoot: File) {
     private fun customFile(relative: String) = File(File(shaderRoot, "custom/all"), relative)
 
     private fun defaultFile(relative: String) =

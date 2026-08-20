@@ -15,6 +15,7 @@ import dev.shadr.core.page.Slider
 import dev.shadr.core.page.TextInput
 import dev.shadr.core.page.Toggle
 import dev.shadr.core.text.Glyphs
+import dev.shadr.core.text.MetricsTable
 import kotlin.math.max
 import kotlin.math.min
 
@@ -24,21 +25,44 @@ class PageRenderer(
     private val fixShadersLayerGap: Double = HudPositionCalculator.DEFAULT_FIX_SHADERS_LAYER_GAP,
     private val debugHitboxes: Boolean = false,
     private val interpolationTicks: Int = 1,
+    private val metrics: MetricsTable = MetricsTable.EMPTY,
 ) {
     fun render(page: Page): RenderedPage {
         val draws = mutableListOf<HudDraw>()
         val regions = mutableListOf<HitRegion>()
+        val boxes = linkedMapOf<String, RenderBox>()
         for (element in page.elements) {
             if (!element.enabled) continue
-            renderElement(element, page, draws)
-            regions += hitRegion(element, page, hitLayer(element))
+            renderElement(element, page, draws, boxes)
+            regions += hitRegion(element, page, hitLayer(element), boxes[element.id])
         }
-        return RenderedPage(draws, regions)
+        return RenderedPage(draws, regions, boxes)
     }
 
-    private fun renderElement(element: Element, page: Page, out: MutableList<HudDraw>) {
+    private fun record(boxes: MutableMap<String, RenderBox>, id: String, box: RenderBox) {
+        val existing = boxes[id]
+        boxes[id] = if (existing == null) box else existing.union(box)
+    }
+
+    private fun quadBox(
+        element: Element,
+        x: Double,
+        y: Double,
+        width: Double,
+        height: Double,
+    ): RenderBox = calculator.designBox(x, y, width, height, element.rotationDeg)
+
+    private fun renderElement(
+        element: Element,
+        page: Page,
+        out: MutableList<HudDraw>,
+        boxes: MutableMap<String, RenderBox>,
+    ) {
         val visible = element.opacity > 0 && (element.type != ElementType.HITBOX || debugHitboxes)
-        if (!visible) return
+        if (!visible) {
+            record(boxes, element.id, hiddenBox(element, page))
+            return
+        }
 
         val x = element.x + page.screen.offsetX
         val yTop = element.y + page.screen.offsetY
@@ -49,20 +73,33 @@ class PageRenderer(
         }
 
         when (element.type) {
-            ElementType.ITEM, ElementType.SHADER, ElementType.VIDEO ->
+            ElementType.ITEM, ElementType.SHADER, ElementType.VIDEO -> {
                 out += itemDraw(element, x, yTop, layer)
-            ElementType.TEXT -> out += textDraw(element, x, yTop, layer)
+                record(boxes, element.id, itemBox(element, x, yTop))
+            }
+            ElementType.TEXT -> {
+                out += textDraw(element, x, yTop, layer)
+                record(boxes, element.id, textBox(element, x, yTop))
+            }
             ElementType.BLOCK_SDF -> {
                 element.outline?.let { out += sdfOutlineDraw(element, x, yTop, layer, it) }
                 out += sdfBoxDraw(element, x, yTop, layer)
+                record(boxes, element.id, sdfBox(element, x, yTop, element.width, element.height))
             }
             ElementType.TEXT_INPUT -> {
                 element.outline?.let { out += sdfOutlineDraw(element, x, yTop, layer, it) }
                 out += sdfBoxDraw(element, x, yTop, layer)
                 out += inputLabelDraw(element, x, yTop, layer)
+                record(boxes, element.id, sdfBox(element, x, yTop, element.width, element.height))
             }
-            ElementType.TOGGLE -> out += toggleDraws(element, x, yTop, layer)
-            ElementType.SLIDER -> out += sliderDraws(element, x, yTop, layer)
+            ElementType.TOGGLE -> {
+                out += toggleDraws(element, x, yTop, layer)
+                record(boxes, element.id, sdfBox(element, x, yTop, element.width, element.height))
+            }
+            ElementType.SLIDER -> {
+                out += sliderDraws(element, x, yTop, layer)
+                record(boxes, element.id, sdfBox(element, x, yTop, element.width, element.height))
+            }
             else -> {
                 val rounded = roundedRadius(element) > 0.0
                 element.outline?.let {
@@ -72,9 +109,40 @@ class PageRenderer(
                         outlineDraw(element, x, yTop, layer, it)
                     }
                 }
-                out += if (rounded) sdfBoxDraw(element, x, yTop, layer) else blockDraw(element, x, yTop, layer)
+                if (rounded) {
+                    out += sdfBoxDraw(element, x, yTop, layer)
+                    record(boxes, element.id, sdfBox(element, x, yTop, element.width, element.height))
+                } else {
+                    out += blockDraw(element, x, yTop, layer)
+                    record(boxes, element.id, quadBox(element, x, yTop, element.width, element.height))
+                }
             }
         }
+    }
+
+    private fun hiddenBox(element: Element, page: Page): RenderBox = calculator.designBox(
+        element.x + page.screen.offsetX, element.y + page.screen.offsetY,
+        element.width, element.height, element.rotationDeg,
+    )
+
+    private fun sdfBox(element: Element, x: Double, y: Double, width: Double, height: Double): RenderBox =
+        quadBox(element, x, y, width, height)
+
+    private fun itemBox(element: Element, x: Double, y: Double): RenderBox =
+        quadBox(element, x, y, element.width, element.height)
+
+    private fun textBox(element: Element, x: Double, y: Double): RenderBox {
+        val lines = metrics.wrap(element.font, element.text, element.lineWidth)
+        val perFontPixel = MetricsTable.designPerFontPixel(element.height)
+        val widest = lines.maxOfOrNull { metrics.measure(element.font, it) } ?: 0.0
+        val width = max(1.0, widest * perFontPixel)
+        val height = max(1.0, lines.size * metrics.font(element.font).lineHeight * perFontPixel)
+        val left = when (element.textAlignment) {
+            dev.shadr.core.TextAlignment.LEFT -> x
+            dev.shadr.core.TextAlignment.RIGHT -> x - width
+            dev.shadr.core.TextAlignment.CENTER -> x - width / 2.0
+        }
+        return calculator.designBox(left, y, width, height, element.rotationDeg)
     }
 
     private fun blockDraw(element: Element, x: Double, y: Double, layer: Double): HudDraw {
@@ -317,23 +385,6 @@ class PageRenderer(
         )
     }
 
-    private fun cornerBucketFor(element: Element): Int {
-        val rounding = element.rounding
-        val radius = rounding?.radius
-        if (radius != null) {
-            return ShapeBuckets.bucketForRadius(radius, element.width, element.height)
-        }
-        return ShapeBuckets.bucketFor(presetFractionOf(rounding?.size ?: RoundingSize.REGULAR))
-    }
-
-    private fun presetFractionOf(size: RoundingSize): Double = when (size) {
-        RoundingSize.NONE -> 0.0
-        RoundingSize.SMALL -> 0.06
-        RoundingSize.MEDIUM -> 0.12
-        RoundingSize.REGULAR -> 0.20
-        RoundingSize.LARGE -> 0.35
-    }
-
     private fun outlineDraw(element: Element, x: Double, y: Double, layer: Double, outline: dev.shadr.core.page.Outline): HudDraw {
         val grow = outline.size
         val placement = calculator.calculateBoxPlacement(
@@ -401,15 +452,21 @@ class PageRenderer(
         else -> element.interaction.actionable
     }
 
-    private fun hitRegion(element: Element, page: Page, layer: Double): HitRegion = HitRegion(
-        elementId = element.id,
-        x = element.x + page.screen.offsetX + page.screen.hitboxOffsetX + element.interaction.hitboxOffsetX,
-        y = element.y + page.screen.offsetY + page.screen.hitboxOffsetY + element.interaction.hitboxOffsetY,
-        width = element.width,
-        height = element.height,
-        layer = layer,
-        interactive = takesInput(element),
-    )
+    private fun hitRegion(element: Element, page: Page, layer: Double, box: RenderBox?): HitRegion {
+        val drawn = box ?: hiddenBox(element, page)
+        val dx = page.screen.hitboxOffsetX + element.interaction.hitboxOffsetX
+        val dy = page.screen.hitboxOffsetY + element.interaction.hitboxOffsetY
+        return HitRegion(
+            elementId = element.id,
+            x = drawn.x + dx,
+            y = drawn.y + dy,
+            width = drawn.width,
+            height = drawn.height,
+            layer = layer,
+            interactive = takesInput(element),
+            rotationDeg = element.rotationDeg,
+        )
+    }
 
     private fun runtimeLayer(layer: Double): Double =
         if (fixShaders) calculator.toFixedShaderLayer(layer, fixShadersLayerGap) else layer

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart' hide Element;
 import 'package:flutter/scheduler.dart' show Ticker;
 
 import 'chrome.dart';
+import 'fields.dart';
 import 'glsl_syntax.dart';
 import 'model.dart';
 import 'protocol.dart';
@@ -230,6 +231,92 @@ class _WorldEffects extends StatelessWidget {
   }
 }
 
+class _EffectParamGroup extends StatelessWidget {
+  const _EffectParamGroup({
+    required this.effect,
+    required this.model,
+    required this.group,
+    required this.params,
+  });
+
+  final EnvironmentEffect effect;
+  final EditorModel model;
+  final String group;
+  final List<EnvironmentParam> params;
+
+  @override
+  Widget build(BuildContext context) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 0, Insets.md, Insets.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (group.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 2),
+              child: Text(group.toUpperCase(), style: context.texts.labelSmall),
+            ),
+          for (final param in params)
+            PropertyRow(
+              label: param.label,
+              child: _paramField(param, tokens),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _paramField(EnvironmentParam param, EditorTokens tokens) {
+    void commit(double value) => model.setEnvironmentValue(effect.id, param.key, value);
+
+    if (param.isColor) {
+      return ColorField(
+        value: param.value.round(),
+        onCommit: (raw) {
+          final parsed = int.tryParse(raw.replaceAll('#', ''), radix: 16);
+          if (parsed != null) commit(parsed.toDouble());
+        },
+      );
+    }
+    if (param.isBool) {
+      return ChoiceField<bool>(
+        value: param.value >= 0.5,
+        options: const [
+          (value: false, icon: Icons.close, label: 'Off'),
+          (value: true, icon: Icons.check, label: 'On'),
+        ],
+        onChanged: (on) => commit(on ? 1 : 0),
+      );
+    }
+    if (param.isEnum) {
+      return DropdownButton<int>(
+        isDense: true,
+        isExpanded: true,
+        underline: const SizedBox.shrink(),
+        value: param.value.round().clamp(0, param.options.length - 1),
+        style: TextStyle(fontSize: 11, color: tokens.textPrimary),
+        items: [
+          for (var i = 0; i < param.options.length; i++)
+            DropdownMenuItem(
+              value: i,
+              child: Text(param.options[i], style: const TextStyle(fontSize: 11)),
+            ),
+        ],
+        onChanged: (v) => commit((v ?? 0).toDouble()),
+      );
+    }
+    return ScrubField(
+      label: '',
+      value: param.value,
+      step: param.step,
+      min: param.min,
+      max: param.max,
+      onChanged: commit,
+    );
+  }
+}
+
 class _WorldEffectTile extends StatelessWidget {
   const _WorldEffectTile({required this.effect, required this.model});
 
@@ -256,7 +343,9 @@ class _WorldEffectTile extends StatelessWidget {
         style: const TextStyle(fontSize: 11),
       ),
       subtitle: Text(
-        effect.enabled ? 'in the pack' : 'not shipped',
+        effect.worldEffect
+            ? (effect.enabled ? 'in the pack · needs Fabulous' : 'not shipped')
+            : (effect.enabled ? 'in the pack' : 'not shipped'),
         style: TextStyle(
           fontSize: 9,
           color: effect.enabled ? tokens.accent : tokens.textTertiary,
@@ -286,6 +375,34 @@ class _WorldEffectTile extends StatelessWidget {
             ),
           ),
         ),
+        if (effect.presets.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 0, Insets.md, Insets.sm),
+            child: Wrap(
+              spacing: Insets.sm,
+              runSpacing: 4,
+              children: [
+                for (final preset in effect.presets)
+                  OutlinedButton(
+                    onPressed: () => model.applyEnvironmentGrade(effect.id, preset),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(preset, style: const TextStyle(fontSize: 10)),
+                  ),
+              ],
+            ),
+          ),
+        for (final group in effect.groups)
+          _EffectParamGroup(
+            effect: effect,
+            model: model,
+            group: group,
+            params: effect.params.where((p) => p.group == group).toList(),
+          ),
         for (final program in effect.programs)
           ListTile(
             dense: true,

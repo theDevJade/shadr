@@ -57,7 +57,8 @@ public final class MinestomHudSink implements HudSink {
     @Override
     public void mount(PlayerId player) {
         if (huds.containsKey(player.getUuid())) return;
-        final Entity carrier = camera.cameraEntityFor(player);
+        Entity carrier = camera.cameraEntityFor(player);
+        if (carrier == null) carrier = players.entity(player);
         if (carrier == null) return;
         huds.put(player.getUuid(), new PlayerHud(carrier));
     }

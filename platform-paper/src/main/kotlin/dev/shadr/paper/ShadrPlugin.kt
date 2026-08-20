@@ -39,6 +39,8 @@ class ShadrPlugin : JavaPlugin() {
     private lateinit var lang: dev.shadr.core.config.Lang
     private lateinit var bridge: PaperBridge
     private lateinit var renderer: PageRenderer
+
+    private var metrics: dev.shadr.core.text.MetricsTable = dev.shadr.core.text.MetricsTable.EMPTY
     private lateinit var actionRunner: ActionRunner
     private var textCapture: AnvilTextCapture? = null
 
@@ -83,7 +85,7 @@ class ShadrPlugin : JavaPlugin() {
             onValue = { player, elementId, value ->
                 sessions[player.uuid]?.let { session ->
                     if (session.setInputValue(elementId, value)) {
-                        bridge.hud().apply(player, session.draws())
+                        applyHud(player, session.draws())
                     }
                 }
             },
@@ -102,10 +104,7 @@ class ShadrPlugin : JavaPlugin() {
         server.pluginManager.registerEvents(bridge, this)
         textCapture?.let { server.pluginManager.registerEvents(AnvilTextListener(it), this) }
 
-        renderer = PageRenderer(
-            fixShaders = config.rendering.fixShaders,
-            fixShadersLayerGap = config.rendering.fixShadersLayerGap,
-        )
+        renderer = buildRenderer()
         actionRunner = ActionRunner(
             PaperActionHost(
                 plugin = this,
@@ -167,6 +166,7 @@ class ShadrPlugin : JavaPlugin() {
             logger.severe("shadr: editor not started: ${it.message}")
             null
         }
+        editor?.metrics = metrics
     }
 
     private fun startUpdates() {
@@ -190,12 +190,15 @@ class ShadrPlugin : JavaPlugin() {
         for ((uuid, session) in sessions) {
             if (session.currentPage.name != edited.name) continue
             session.refreshPage(edited)
-            bridge.hud().apply(PlayerId(uuid), session.draws())
+            applyHud(PlayerId(uuid), session.draws())
         }
     }
 
     private fun rebuildPackForShaders(): Boolean = runCatching {
         rebuildPack()
+        if (server.isPrimaryThread) refreshHeaderEmitters() else {
+            server.scheduler.runTask(this, Runnable { refreshHeaderEmitters() })
+        }
         if (server.isPrimaryThread) resendPackToAll() else server.scheduler.runTask(this, Runnable { resendPackToAll() })
         true
     }.getOrElse {
@@ -233,9 +236,15 @@ class ShadrPlugin : JavaPlugin() {
         return result.sources
     }
 
+    private fun buildRenderer() = PageRenderer(
+        fixShaders = config.rendering.fixShaders,
+        fixShadersLayerGap = config.rendering.fixShadersLayerGap,
+        metrics = metrics,
+    )
+
     private fun rebuildPack() = synchronized(packBuildLock) {
         val packRoot = File(dataFolder, "resourcepack/pack")
-        PackGenerator(
+        val generator = PackGenerator(
             shaderSrc = File(dataFolder, "shaders"),
             fontDir = File(dataFolder, "font"),
             soundDir = File(dataFolder, "sounds"),
@@ -243,10 +252,15 @@ class ShadrPlugin : JavaPlugin() {
                 shaderLoader.issues.forEach { logger.warning("shader: $it") }
             },
             environment = environment.all(),
+            environmentParams = environment.allParams(),
             videos = videoSources(),
             stream = config.stream.takeIf { it.enabled }?.geometry(),
             hideAnvilScreen = config.pack.hideAnvilScreen,
-        ).build(packRoot)
+        )
+        generator.build(packRoot)
+        metrics = generator.metrics
+        if (::renderer.isInitialized) renderer = buildRenderer()
+        editor?.metrics = metrics
 
         val atlas = UiImageAtlas(
             contentsDir = File(dataFolder, "contents"),
@@ -311,6 +325,15 @@ class ShadrPlugin : JavaPlugin() {
         effects = loader.loadEffects()
         pages = loader.loadPages(components)
         loader.issues.forEach { logger.warning(it) }
+        refreshOpenPages()
+    }
+
+    private fun refreshOpenPages() {
+        for ((uuid, session) in sessions) {
+            val fresh = pages[session.currentPage.name] ?: continue
+            session.refreshPage(fresh)
+            applyHud(PlayerId(uuid), session.draws())
+        }
     }
 
     private fun startHosting(): String? {
@@ -328,8 +351,15 @@ class ShadrPlugin : JavaPlugin() {
     }
 
     private fun wireInput() {
+        (bridge.input() as? PaperInput)?.screenFor = { player ->
+            sessions[player.uuid]?.currentPage?.screen
+        }
         bridge.players().onJoin { player ->
             if (config.pack.applyOnJoin) sendPack(player)
+            if (worldEffectsActive()) {
+                bridge.hud().mount(player)
+                applyHud(player, emptyList())
+            }
         }
         bridge.players().onQuit { player ->
             sessions.remove(player.uuid)
@@ -349,7 +379,7 @@ class ShadrPlugin : JavaPlugin() {
             if (sample.rightClick) session.click(rightClick = true)
             if (sample.leftClick || sample.rightClick) openFocusedInput(sample.player, session)
             if (changed || sample.leftClick || sample.rightClick) {
-                bridge.hud().apply(sample.player, session.draws())
+                applyHud(sample.player, session.draws())
             }
         }
     }
@@ -412,7 +442,7 @@ class ShadrPlugin : JavaPlugin() {
 
         for ((uuid, session) in sessions) {
             if (!session.hasPlaceholders) continue
-            if (session.refreshPlaceholders()) bridge.hud().apply(PlayerId(uuid), session.draws())
+            if (session.refreshPlaceholders()) applyHud(PlayerId(uuid), session.draws())
         }
     }
 
@@ -477,7 +507,7 @@ class ShadrPlugin : JavaPlugin() {
         if (existing != null && replacing) {
             existing.openPage(page)
             applyCameraFor(player, page)
-            bridge.hud().apply(player, existing.draws())
+            applyHud(player, existing.draws())
             return
         }
 
@@ -494,7 +524,7 @@ class ShadrPlugin : JavaPlugin() {
 
         applyCameraFor(player, page)
         bridge.hud().mount(player)
-        bridge.hud().apply(player, session.draws())
+        applyHud(player, session.draws())
     }
 
     private fun applyCameraFor(player: PlayerId, page: dev.shadr.core.page.Page) {
@@ -518,8 +548,31 @@ class ShadrPlugin : JavaPlugin() {
                 textCapture?.release(it)
             }
         bridge.hud().clear(player)
+        if (worldEffectsActive()) {
+            bridge.hud().mount(player)
+            applyHud(player, emptyList())
+        }
         bridge.camera().setClickTargetsEnabled(player, false)
         bridge.camera().stop(player)
+    }
+
+    private fun worldEffectsActive(): Boolean = environment.activeWorldEffects().isNotEmpty()
+
+    private fun applyHud(player: PlayerId, draws: List<dev.shadr.core.hud.HudDraw>) {
+        bridge.hud().apply(player, draws + dev.shadr.core.hud.HeaderEmitter.draws(worldEffectsActive()))
+    }
+
+    private fun refreshHeaderEmitters() {
+        for (online in server.onlinePlayers) {
+            val id = PlayerId(online.uniqueId.toString())
+            val session = sessions[id.uuid]
+            if (session == null) {
+                bridge.hud().mount(id)
+                applyHud(id, emptyList())
+            } else {
+                applyHud(id, session.draws())
+            }
+        }
     }
 
     override fun onCommand(sender: CommandSender, command: Command, label: String, args: Array<out String>): Boolean {
@@ -546,6 +599,7 @@ class ShadrPlugin : JavaPlugin() {
                 say(sender, "pack-sent")
             }
             "pages" -> say(sender, "pages", "pages" to pages.keys.sorted().joinToString(", "))
+            "effects" -> return effectsCommand(sender, args.drop(1))
             "editor" -> return editorCommand(sender, args.getOrNull(1)?.lowercase())
             "shader" -> return shaderCommand(sender, args.drop(1))
             "stream" -> return streamCommand(sender, args.drop(1))
@@ -697,6 +751,61 @@ class ShadrPlugin : JavaPlugin() {
             sender.sendMessage("shadr editor: $url  (expires in $minutes minutes)")
         }
         return true
+    }
+
+    private fun effectsCommand(sender: CommandSender, args: List<String>): Boolean {
+        val name = args.firstOrNull()?.lowercase()
+        if (name == null) {
+            for (effect in dev.shadr.core.shader.EnvironmentEffect.entries) {
+                val state = if (environment.isEnabled(effect)) "on" else "off"
+                val host = if (effect.isWorldEffect) " (needs Fabulous graphics)" else ""
+                reply(sender, "${effect.id}: $state$host  ${effect.title}")
+            }
+            return true
+        }
+
+        val effect = dev.shadr.core.shader.EnvironmentEffect.parse(name)
+            ?: return reply(sender, "no such effect: $name")
+
+        val key = args.getOrNull(1)
+        if (key == null) {
+            reply(sender, "${effect.id}: ${if (environment.isEnabled(effect)) "on" else "off"}")
+            for ((setting, value) in environment.paramsOf(effect)) {
+                reply(sender, "  $setting = $value")
+            }
+            return true
+        }
+
+        val raw = args.getOrNull(2)
+            ?: return reply(sender, "usage: /shadr effects ${effect.id} <setting> <value>")
+
+        if (key.equals("enabled", true)) {
+            val on = raw.toBooleanStrictOrNull()
+                ?: return reply(sender, "expected true or false, got $raw")
+            environment.set(effect, on)
+            rebuildPackForShaders()
+            return reply(sender, "${effect.id} is now ${if (on) "on" else "off"}")
+        }
+
+        if (key.equals("preset", true)) {
+            val presets = dev.shadr.core.shader.GradingPresets.load(File(dataFolder, "shaders"))
+            val preset = presets[raw]
+                ?: return reply(sender, "no such preset: $raw (${presets.keys.joinToString(", ")})")
+            val applied = environment.applyPreset(effect, preset)
+            rebuildPackForShaders()
+            return reply(sender, "applied $raw to ${effect.id} ($applied settings)")
+        }
+
+        val value = raw.toDoubleOrNull()
+            ?: dev.shadr.core.Rgb.parse(raw)?.packed?.toDouble()
+            ?: return reply(sender, "expected a number or a colour, got $raw")
+
+        if (!environment.setParam(effect, key, value)) {
+            val known = effect.params.joinToString(", ") { it.key }
+            return reply(sender, "${effect.id} has no setting $key (${known.ifEmpty { "none" }})")
+        }
+        rebuildPackForShaders()
+        return reply(sender, "${effect.id}.$key = ${environment.paramsOf(effect)[key]}")
     }
 
     private fun reply(sender: CommandSender, message: String): Boolean {

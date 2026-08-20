@@ -175,7 +175,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                 Expanded(
                   child: ScrubField(
                     label: 'x',
-                    value: 0,
+                    value: it.hitboxOffsetX,
                     enabled: editable,
                     onChanged: (v) => set('interaction.hitboxOffsetX', '$v'),
                   ),
@@ -184,7 +184,7 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                 Expanded(
                   child: ScrubField(
                     label: 'y',
-                    value: 0,
+                    value: it.hitboxOffsetY,
                     enabled: editable,
                     onChanged: (v) => set('interaction.hitboxOffsetY', '$v'),
                   ),
@@ -391,10 +391,31 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
             ),
             PropertyRow(
               label: 'Font',
-              child: ValueField(
+              child: SuggestField(
                 value: element.font,
                 enabled: editable,
+                options: const [
+                  (value: 'shadr', label: 'shadr', detail: 'ttf, default weight'),
+                  (value: 'shadr_semibold', label: 'shadr_semibold', detail: 'ttf, semibold'),
+                  (value: 'shadr_sharp', label: 'shadr_sharp', detail: 'msdf, ascii only'),
+                  (
+                    value: 'shadr_sharp_semibold',
+                    label: 'shadr_sharp_semibold',
+                    detail: 'msdf, ascii only'
+                  ),
+                  (value: 'uiimages', label: 'uiimages', detail: 'the image atlas'),
+                ],
                 onCommit: (v) => set('font', v),
+              ),
+            ),
+            PropertyRow(
+              label: 'Wrap',
+              child: ScrubField(
+                label: 'px',
+                value: element.lineWidth.toDouble(),
+                enabled: editable,
+                min: 1,
+                onChanged: (v) => set('lineWidth', '${v.round()}'),
               ),
             ),
           ],
@@ -451,6 +472,246 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                 onCommit: (v) => set('outline.color', v),
               ),
             ),
+        ],
+      ),
+      Section(
+        title: 'Anchor',
+        children: [
+          PropertyRow(
+            label: 'Screen',
+            child: ChoiceField<String>(
+              value: element.align,
+              enabled: editable,
+              options: const [
+                (value: 'LEFT', icon: Icons.align_horizontal_left, label: 'Left'),
+                (value: 'CENTER', icon: Icons.align_horizontal_center, label: 'Centre'),
+                (value: 'RIGHT', icon: Icons.align_horizontal_right, label: 'Right'),
+              ],
+              onChanged: (v) => set('align', v.toLowerCase()),
+            ),
+          ),
+          if (!element.isText)
+            PropertyRow(
+              label: 'Glyph',
+              child: ValueField(
+                value: element.unicode,
+                enabled: editable,
+                hint: 'default',
+                onCommit: (v) => set('unicode', v),
+              ),
+            ),
+        ],
+      ),
+      ..._controlFields(model, element, editable, set),
+    ];
+  }
+
+  List<Widget> _controlFields(
+    EditorModel model,
+    Element element,
+    bool editable,
+    void Function(String, String, {bool continuous}) set,
+  ) {
+    final input = element.input;
+    if (input != null) {
+      return [
+        Section(
+          title: 'Input',
+          children: [
+            PropertyRow(
+              label: 'Placeholder',
+              child: ValueField(
+                value: input.placeholder,
+                enabled: editable,
+                onCommit: (v) => set('placeholder', v),
+              ),
+            ),
+            PropertyRow(
+              label: 'Value',
+              child: ValueField(
+                value: input.value,
+                enabled: editable,
+                onCommit: (v) => set('value', v),
+              ),
+            ),
+            PropertyRow(
+              label: 'Font size',
+              child: ScrubField(
+                label: 'px',
+                value: input.fontSize,
+                enabled: editable,
+                min: 1,
+                onChanged: (v) => set('fontSize', '$v', continuous: true),
+              ),
+            ),
+            PropertyRow(
+              label: 'Padding',
+              child: ScrubField(
+                label: 'px',
+                value: input.padding,
+                enabled: editable,
+                min: 0,
+                onChanged: (v) => set('padding', '$v', continuous: true),
+              ),
+            ),
+            PropertyRow(
+              label: 'Max length',
+              child: ScrubField(
+                label: 'chars',
+                value: input.maxLength.toDouble(),
+                enabled: editable,
+                min: 1,
+                onChanged: (v) => set('maxLength', '${v.round()}'),
+              ),
+            ),
+            PropertyRow(
+              label: 'Lines',
+              child: ScrubField(
+                label: 'n',
+                value: input.lines.toDouble(),
+                enabled: editable,
+                min: 1,
+                max: 4,
+                onChanged: (v) => set('lines', '${v.round()}'),
+              ),
+            ),
+            PropertyRow(
+              label: 'Secret',
+              child: ChoiceField<bool>(
+                value: input.secret,
+                enabled: editable,
+                options: const [
+                  (value: false, icon: Icons.visibility, label: 'Shown'),
+                  (value: true, icon: Icons.visibility_off, label: 'Hidden'),
+                ],
+                onChanged: (v) => set('secret', '$v'),
+              ),
+            ),
+          ],
+        ),
+      ];
+    }
+
+    final toggle = element.toggle;
+    if (toggle != null) {
+      return [
+        Section(
+          title: 'Toggle',
+          children: [
+            PropertyRow(
+              label: 'State',
+              child: ChoiceField<bool>(
+                value: toggle.value,
+                enabled: editable,
+                options: const [
+                  (value: false, icon: Icons.toggle_off, label: 'Off'),
+                  (value: true, icon: Icons.toggle_on, label: 'On'),
+                ],
+                onChanged: (v) => set('value', '$v'),
+              ),
+            ),
+            PropertyRow(
+              label: 'On',
+              child: ColorField(
+                value: toggle.onColor,
+                enabled: editable,
+                onCommit: (v) => set('onColor', v),
+              ),
+            ),
+            PropertyRow(
+              label: 'Off',
+              child: ColorField(
+                value: toggle.offColor,
+                enabled: editable,
+                onCommit: (v) => set('offColor', v),
+              ),
+            ),
+            PropertyRow(
+              label: 'Knob',
+              child: ColorField(
+                value: toggle.knobColor,
+                enabled: editable,
+                onCommit: (v) => set('knobColor', v),
+              ),
+            ),
+          ],
+        ),
+      ];
+    }
+
+    final slider = element.slider;
+    if (slider == null) return const [];
+    return [
+      Section(
+        title: 'Slider',
+        children: [
+          PropertyRow(
+            label: 'Value',
+            child: ScrubField(
+              label: 'n',
+              value: slider.value,
+              enabled: editable,
+              onChanged: (v) => set('value', '$v', continuous: true),
+            ),
+          ),
+          PropertyRow(
+            label: 'Range',
+            child: Row(
+              children: [
+                Expanded(
+                  child: ScrubField(
+                    label: 'min',
+                    value: slider.min,
+                    enabled: editable,
+                    onChanged: (v) => set('min', '$v'),
+                  ),
+                ),
+                const SizedBox(width: Insets.sm),
+                Expanded(
+                  child: ScrubField(
+                    label: 'max',
+                    value: slider.max,
+                    enabled: editable,
+                    onChanged: (v) => set('max', '$v'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          PropertyRow(
+            label: 'Step',
+            child: ScrubField(
+              label: 'n',
+              value: slider.step,
+              enabled: editable,
+              min: 0,
+              onChanged: (v) => set('step', '$v'),
+            ),
+          ),
+          PropertyRow(
+            label: 'Track',
+            child: ColorField(
+              value: slider.trackColor,
+              enabled: editable,
+              onCommit: (v) => set('trackColor', v),
+            ),
+          ),
+          PropertyRow(
+            label: 'Fill',
+            child: ColorField(
+              value: slider.fillColor,
+              enabled: editable,
+              onCommit: (v) => set('fillColor', v),
+            ),
+          ),
+          PropertyRow(
+            label: 'Knob',
+            child: ColorField(
+              value: slider.knobColor,
+              enabled: editable,
+              onCommit: (v) => set('knobColor', v),
+            ),
+          ),
         ],
       ),
     ];
@@ -661,6 +922,8 @@ class _AddSection extends StatelessWidget {
 
   static const _types = <({String id, IconData icon, String label})>[
     (id: 'block', icon: Icons.crop_square, label: 'Block'),
+    (id: 'block_rounded', icon: Icons.rounded_corner, label: 'Rounded'),
+    (id: 'block_sdf', icon: Icons.blur_circular, label: 'SDF'),
     (id: 'circle', icon: Icons.circle_outlined, label: 'Circle'),
     (id: 'progress', icon: Icons.remove, label: 'Bar'),
     (id: 'gradient', icon: Icons.gradient, label: 'Gradient'),
@@ -673,6 +936,7 @@ class _AddSection extends StatelessWidget {
     (id: 'shader', icon: Icons.bolt, label: 'Shader'),
     (id: 'video', icon: Icons.movie, label: 'Video'),
     (id: 'item', icon: Icons.category_outlined, label: 'Item'),
+    (id: 'grid_block', icon: Icons.grid_view, label: 'Grid'),
   ];
 
   @override

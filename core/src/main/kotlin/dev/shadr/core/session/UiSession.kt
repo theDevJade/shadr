@@ -188,14 +188,21 @@ class UiSession @JvmOverloads constructor(
             var result = element
             if (element.id == hoveredId) result = applyEffect(result, element.interaction.hoverEffect)
             if (element.id == pressedId) result = applyEffect(result, element.interaction.clickEffect)
-            result = withControlValue(result, hovered = element.id == hoveredId)
+            result = withControlValue(result, hovered = element.id == hoveredId, animate = true)
             resolvePlaceholders(result)
         }
-        rendered = renderer.render(page.copy(elements = transformed))
+        val drawn = renderer.render(page.copy(elements = transformed))
+
+        val settled = page.elements.map { element ->
+            resolvePlaceholders(withControlValue(element, hovered = false, animate = false))
+        }
+        val stable = renderer.render(page.copy(elements = settled))
+
+        rendered = RenderedPage(drawn.draws, stable.hitRegions, drawn.renderBoxes)
         dirty = true
     }
 
-    private fun withControlValue(element: Element, hovered: Boolean): Element {
+    private fun withControlValue(element: Element, hovered: Boolean, animate: Boolean): Element {
         element.toggle?.let { toggle ->
             val stored = inputValues[element.id]?.toBooleanStrictOrNull() ?: toggle.value
             return element.copy(toggle = toggle.copy(value = stored))
@@ -204,17 +211,17 @@ class UiSession @JvmOverloads constructor(
             val stored = inputValues[element.id]?.toDoubleOrNull() ?: slider.value
             return element.copy(slider = slider.copy(value = slider.clamp(stored)))
         }
-        return withInputValue(element, hovered)
+        return withInputValue(element, hovered, animate)
     }
 
-    private fun withInputValue(element: Element, hovered: Boolean): Element {
+    private fun withInputValue(element: Element, hovered: Boolean, animate: Boolean): Element {
         val input = element.input ?: return element
         val focused = element.id == focusedInputId
         var result = element.copy(input = input.copy(value = inputValues[element.id] ?: input.value))
         result = element.outline?.let { outline ->
             result.copy(outline = outline.copy(color = input.outlineFor(outline.color, hovered, focused)))
         } ?: result
-        if (focused) result = applyEffect(result, input.focusEffect)
+        if (focused && animate) result = applyEffect(result, input.focusEffect)
         return result
     }
 
