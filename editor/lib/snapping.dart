@@ -1,3 +1,5 @@
+import 'dart:ui' show Rect;
+
 import 'protocol.dart';
 
 typedef Guide = ({bool vertical, double at});
@@ -25,6 +27,23 @@ class Snapper {
     required double dy,
     required ScreenDef screen,
     bool enabled = true,
+  }) =>
+      snapRects(
+        moving: moving.map((e) => e.bounds).toList(),
+        others: others.map((e) => e.bounds).toList(),
+        dx: dx,
+        dy: dy,
+        screen: screen,
+        enabled: enabled,
+      );
+
+  SnapResult snapRects({
+    required List<Rect> moving,
+    required List<Rect> others,
+    required double dx,
+    required double dy,
+    required ScreenDef screen,
+    bool enabled = true,
   }) {
     if (!enabled || moving.isEmpty) {
       return SnapResult(dx: dx, dy: dy, guides: const []);
@@ -32,20 +51,20 @@ class Snapper {
 
     var left = double.infinity, right = -double.infinity;
     var top = double.infinity, bottom = -double.infinity;
-    for (final element in moving) {
-      left = left < element.x + dx ? left : element.x + dx;
-      top = top < element.y + dy ? top : element.y + dy;
-      final r = element.x + element.width + dx;
-      final b = element.y + element.height + dy;
+    for (final rect in moving) {
+      left = left < rect.left + dx ? left : rect.left + dx;
+      top = top < rect.top + dy ? top : rect.top + dy;
+      final r = rect.right + dx;
+      final b = rect.bottom + dy;
       right = right > r ? right : r;
       bottom = bottom > b ? bottom : b;
     }
 
     final targetsX = <double>[0, screen.width / 2, screen.width];
     final targetsY = <double>[0, screen.height / 2, screen.height];
-    for (final element in others) {
-      targetsX.addAll([element.x, element.x + element.width / 2, element.x + element.width]);
-      targetsY.addAll([element.y, element.y + element.height / 2, element.y + element.height]);
+    for (final rect in others) {
+      targetsX.addAll([rect.left, rect.center.dx, rect.right]);
+      targetsY.addAll([rect.top, rect.center.dy, rect.bottom]);
     }
 
     final guides = <Guide>[];
@@ -76,16 +95,31 @@ class Snapper {
     required List<Element> others,
     required ScreenDef screen,
     bool enabled = true,
+  }) =>
+      nearestEdge(
+        value: value,
+        vertical: vertical,
+        others: others.map((e) => e.bounds).toList(),
+        screen: screen,
+        enabled: enabled,
+      );
+
+  double? nearestEdge({
+    required double value,
+    required bool vertical,
+    required List<Rect> others,
+    required ScreenDef screen,
+    bool enabled = true,
   }) {
     if (!enabled) return null;
     final targets = vertical
         ? <double>[0, screen.width / 2, screen.width]
         : <double>[0, screen.height / 2, screen.height];
-    for (final element in others) {
+    for (final rect in others) {
       if (vertical) {
-        targets.addAll([element.x, element.x + element.width / 2, element.x + element.width]);
+        targets.addAll([rect.left, rect.center.dx, rect.right]);
       } else {
-        targets.addAll([element.y, element.y + element.height / 2, element.y + element.height]);
+        targets.addAll([rect.top, rect.center.dy, rect.bottom]);
       }
     }
     return _closest([value], targets)?.target;

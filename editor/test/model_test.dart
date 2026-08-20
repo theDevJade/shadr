@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart' hide Element;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shadr_editor/model.dart';
+import 'package:shadr_editor/protocol.dart';
 
 import 'support.dart';
 
@@ -237,5 +238,161 @@ void main() {
     expect(sent['to'], 300.0);
     expect(sent['easing'], 'ease-out');
     expect(sent['duration'], 12);
+  });
+
+  group('documents', () {
+    test('creating one asks for the kind, mode and size that were chosen', () async {
+      final (:model, :transport) = connectedModel();
+
+      model.createDocument(
+        const DocumentRef(name: 'bars', kind: DocumentKind.page),
+        hud: true,
+        width: 2560,
+        height: 1440,
+      );
+
+      final sent = transport.lastOfType('newDocument')!;
+      expect(sent['name'], 'bars');
+      expect(sent['kind'], 'PAGE');
+      expect(sent['hud'], isTrue);
+      expect(sent['width'], 2560.0);
+      expect(sent['height'], 1440.0);
+    });
+
+    test('the new document becomes the open one once its snapshot lands', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver({
+        't': 'welcome',
+        'documents': [
+          {'name': 'menu', 'kind': 'PAGE'},
+        ],
+      });
+      transport.deliver(snapshotJson(name: 'menu'));
+      expect(model.openRef?.name, 'menu');
+
+      model.createDocument(const DocumentRef(name: 'bars', kind: DocumentKind.page));
+      expect(model.openRef?.name, 'menu', reason: 'the picker jumped before the server agreed');
+
+      transport.deliver(snapshotJson(name: 'bars'));
+      expect(model.openRef, const DocumentRef(name: 'bars', kind: DocumentKind.page));
+    });
+
+    test('a refusal leaves the open document where it was', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver({
+        't': 'welcome',
+        'documents': [
+          {'name': 'menu', 'kind': 'PAGE'},
+        ],
+      });
+      transport.deliver(snapshotJson(name: 'menu'));
+
+      model.createDocument(const DocumentRef(name: 'menu', kind: DocumentKind.page));
+      transport.deliver({'t': 'error', 'message': "a page called 'menu' already exists"});
+      transport.deliver(snapshotJson(name: 'menu'));
+
+      expect(model.openRef?.name, 'menu');
+      expect(model.notice, contains('already exists'));
+    });
+
+    test('a fresh list from the server replaces the one the welcome brought', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver({
+        't': 'welcome',
+        'documents': [
+          {'name': 'menu', 'kind': 'PAGE'},
+        ],
+      });
+
+      transport.deliver({
+        't': 'documents',
+        'documents': [
+          {'name': 'menu', 'kind': 'PAGE'},
+          {'name': 'chip', 'kind': 'COMPONENT'},
+        ],
+      });
+
+      expect(model.documents.map((d) => d.name), ['menu', 'chip']);
+      expect(model.documents.last.kind, DocumentKind.component);
+    });
+
+    test('renaming the open document follows it to the new name', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver({
+        't': 'welcome',
+        'documents': [
+          {'name': 'menu', 'kind': 'PAGE'},
+        ],
+      });
+      transport.deliver(snapshotJson(name: 'menu'));
+
+      model.renameDocument(const DocumentRef(name: 'menu', kind: DocumentKind.page), 'lobby');
+      expect(transport.lastOfType('renameDocument')?['to'], 'lobby');
+
+      transport.deliver(snapshotJson(name: 'lobby'));
+      expect(model.openRef?.name, 'lobby');
+    });
+
+    test('deleting sends the ref and lets go of it', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver({
+        't': 'welcome',
+        'documents': [
+          {'name': 'menu', 'kind': 'PAGE'},
+        ],
+      });
+      transport.deliver(snapshotJson(name: 'menu'));
+
+      model.deleteDocument(const DocumentRef(name: 'menu', kind: DocumentKind.page));
+      expect(transport.lastOfType('deleteDocument')?['name'], 'menu');
+      expect(model.openRef, isNull);
+    });
+  });
+
+  group('page settings', () {
+    test('a snapshot carries whether the page is a hud', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver(snapshotJson(
+        screen: const {'width': 1920.0, 'height': 1080.0, 'hud': true, 'cursorSize': 0.0},
+      ));
+
+      expect(model.snapshot!.screen.hud, isTrue);
+      expect(model.snapshot!.screen.cursorSize, 0);
+    });
+
+    test('switching mode patches the screen, not an element', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver(snapshotJson(elements: [block('a')]));
+
+      model.patchScreen('hud', 'true');
+      expect(transport.lastOfType('patchScreen')?['changes'], {'hud': 'true'});
+      expect(transport.lastOfType('patch'), isNull);
+    });
+
+    test('the playhead being down refuses a screen edit', () async {
+      final (:model, :transport) = connectedModel();
+      transport.deliver(snapshotJson(elements: [block('a')], previewTick: 4));
+
+      model.patchScreen('hud', 'true');
+      expect(transport.lastOfType('patchScreen'), isNull);
+    });
+  });
+
+  test('a drag in flight sticks to a guide rather than snapping only when it is sent', () async {
+    final (:model, :transport) = connectedModel();
+    transport.deliver(snapshotJson(elements: [
+      block('a', x: 100, y: 100, w: 100, h: 50),
+      block('b', x: 300, y: 400, w: 60, h: 50),
+    ]));
+
+    model
+      ..select('a')
+      ..dragBy(const Offset(197, 0), bypassSnapping: false);
+
+    expect(model.boundsOf(model.elementById('a')!).left, 300);
+    expect(model.guides.any((g) => g.vertical && g.at == 300), isTrue);
+
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    expect((transport.lastOfType('patchAll')!['edits'] as Map)['a']['position.x'], '300.0');
   });
 }

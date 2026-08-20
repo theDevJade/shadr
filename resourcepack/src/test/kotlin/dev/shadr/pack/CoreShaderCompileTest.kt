@@ -226,6 +226,81 @@ class CoreShaderCompileTest {
         )
     }
 
+    private fun varyings(source: String, keyword: String): List<String> =
+        Regex("""(?m)^\s*(?:flat\s+)?$keyword\s+[A-Za-z0-9_]+\s+([A-Za-z0-9_]+)\s*;""")
+            .findAll(source)
+            .map { it.groupValues[1] }
+            .toList()
+
+    private fun flatten(root: File, api: VanillaApi, file: File): String =
+        resolve(root, api, file, file.readText(), mutableSetOf())
+
+    @Test
+    fun `shadrMode is the last varying so a vanilla fragment shader keeps its locations`() {
+        val offenders = mutableListOf<String>()
+        for (root in overlays) {
+            val api = (apisFor[root.name] ?: error("${root.name} has no vanilla API mapping")).first()
+            val stages = File(root, "core").listFiles { f -> f.extension == "vsh" }.orEmpty().sortedBy { it.name }
+            for (file in stages) {
+                val names = varyings(flatten(root, api, file), "out")
+                val at = names.indexOf("shadrMode")
+                if (at != -1 && at != names.size - 1) {
+                    offenders += "${root.name}/${file.name}: shadrMode is out #${at + 1} of ${names.size} " +
+                        "[${names.joinToString(", ")}]"
+                }
+            }
+        }
+        assertTrue(
+            offenders.isEmpty(),
+            "Vulkan assigns varying locations per stage in declaration order, so anything shadr declares " +
+                "before the vanilla varyings shifts every one of them and a vanilla fragment shader then " +
+                "reads the wrong slot. Import hud.glsl after the other outputs.\n" +
+                offenders.joinToString("\n"),
+        )
+    }
+
+    @Test
+    fun `a shadr vertex shader and its own fragment shader agree on varying order`() {
+        val offenders = mutableListOf<String>()
+        for (root in overlays) {
+            val api = (apisFor[root.name] ?: error("${root.name} has no vanilla API mapping")).first()
+            val core = File(root, "core")
+            val pairs = core.listFiles { f -> f.extension == "vsh" }.orEmpty()
+                .sortedBy { it.name }
+                .mapNotNull { vsh ->
+                    File(core, "${vsh.nameWithoutExtension}.fsh").takeIf { it.isFile }?.let { vsh to it }
+                }
+            for ((vsh, fsh) in pairs) {
+                val outs = varyings(flatten(root, api, vsh), "out")
+                val ins = varyings(flatten(root, api, fsh), "in")
+                if (outs != ins) {
+                    offenders += "${root.name}/${vsh.nameWithoutExtension}: " +
+                        "vsh [${outs.joinToString(", ")}] but fsh [${ins.joinToString(", ")}]"
+                }
+            }
+        }
+        assertTrue(
+            offenders.isEmpty(),
+            "Paired stages must declare varyings in the same order or Vulkan links them to the " +
+                "wrong locations.\n" + offenders.joinToString("\n"),
+        )
+    }
+
+    private data class ValidatorTarget(
+        val label: String,
+        val args: List<String>,
+        val defines: List<String>,
+    )
+
+    private val validatorTargets = listOf(
+        ValidatorTarget("opengl", emptyList(), emptyList()),
+        ValidatorTarget(
+            "vulkan1.2",
+            listOf("-V", "--target-env", "vulkan1.2", "--auto-map-locations", "--auto-map-bindings"),
+            listOf("gl_VertexID gl_VertexIndex", "gl_InstanceID gl_InstanceIndex"),
+        ),
+    )
+
     private data class OverlayResult(val programs: Int, val failures: List<String>)
 
     private fun compileOverlay(root: File, api: VanillaApi): OverlayResult {
@@ -245,16 +320,27 @@ class CoreShaderCompileTest {
                 withDefines.addAll(versionAt + 1, defines.map { "#define $it" })
 
                 val tag = defines.joinToString("_").ifEmpty { "default" }
-                val out = File(dir, "${program.nameWithoutExtension}_${stage}_${api.label}_$tag.$stage")
-                out.writeText(withDefines.joinToString("\n"))
 
-                val process = ProcessBuilder("glslangValidator", "-S", stage, out.path)
-                    .redirectErrorStream(true).start()
-                val output = process.inputStream.bufferedReader().readText()
-                if (process.waitFor() != 0) {
-                    broken += "${root.name}/${program.name} on ${api.label} " +
-                        "[${defines.joinToString(", ").ifEmpty { "default" }}]:\n" +
-                        output.lines().take(8).joinToString("\n")
+                for (target in validatorTargets) {
+                    val source = withDefines.toMutableList()
+                    source.addAll(versionAt + 1, target.defines.map { "#define $it" })
+                    val out = File(
+                        dir,
+                        "${program.nameWithoutExtension}_${stage}_${api.label}_${target.label}_$tag.$stage",
+                    )
+                    out.writeText(source.joinToString("\n"))
+
+                    val binary = File(dir, "${out.name}.${target.label}.spv")
+                    val emit = if (target.args.contains("-V")) listOf("-o", binary.path) else emptyList()
+                    val process = ProcessBuilder(
+                        listOf("glslangValidator", "-S", stage) + target.args + emit + listOf(out.path),
+                    ).redirectErrorStream(true).start()
+                    val output = process.inputStream.bufferedReader().readText()
+                    if (process.waitFor() != 0) {
+                        broken += "${root.name}/${program.name} on ${api.label} via ${target.label} " +
+                            "[${defines.joinToString(", ").ifEmpty { "default" }}]:\n" +
+                            output.lines().take(8).joinToString("\n")
+                    }
                 }
             }
         }

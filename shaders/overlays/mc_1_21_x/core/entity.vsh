@@ -12,7 +12,6 @@ in vec3 Normal;
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:projection.glsl>
 #moj_import <minecraft:globals.glsl>
-#moj_import <hud.glsl>
 
 uniform sampler2D Sampler1;
 uniform sampler2D Sampler2;
@@ -30,6 +29,8 @@ out vec4 vertexColor;
 out vec4 lightMapColor;
 out vec4 overlayColor;
 out vec2 texCoord0;
+
+#moj_import <hud.glsl>
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);

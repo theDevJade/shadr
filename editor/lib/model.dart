@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/widgets.dart' hide Element;
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -392,11 +394,25 @@ class EditorModel extends ChangeNotifier {
           _selection.clear();
           _viewportInitialised = false;
         }
+        if (_settling && _origins.isEmpty) {
+          _settling = false;
+          _live = const {};
+        }
+        final opened = _pendingOpen;
+        if (opened != null) {
+          _pendingOpen = null;
+          _openRef = opened;
+        }
         _selection.removeWhere((id) => next.elements.every((e) => e.id != id));
         notifyListeners();
       case 'saved':
         _lastSave = SaveResult.fromJson(json);
         _message = _lastSave!.summary;
+        notifyListeners();
+      case 'documents':
+        _documents = ((json['documents'] as List<dynamic>?) ?? const [])
+            .map((e) => DocumentRef.fromJson(e as Map<String, dynamic>))
+            .toList();
         notifyListeners();
       case 'images':
         _images = ((json['images'] as List<dynamic>?) ?? const [])
@@ -447,7 +463,9 @@ class EditorModel extends ChangeNotifier {
         _message = 'saved: $detail';
         notifyListeners();
       case 'error':
+        _pendingOpen = null;
         _message = 'server: ${json['message']}';
+        _notice = json['message'] as String?;
         notifyListeners();
     }
   }
@@ -459,11 +477,44 @@ class EditorModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  DocumentRef? _pendingOpen;
+
   void open(DocumentRef ref) {
     _openRef = ref;
+    _pendingOpen = null;
     _selection.clear();
     notifyListeners();
     _send(wire.openDocument(ref));
+  }
+
+  void createDocument(
+    DocumentRef ref, {
+    bool hud = false,
+    double width = 1920,
+    double height = 1080,
+  }) {
+    _pendingOpen = ref;
+    _send(wire.newDocument(ref, hud: hud, width: width, height: height));
+  }
+
+  void deleteDocument(DocumentRef ref) {
+    if (ref == _openRef) _openRef = null;
+    _send(wire.deleteDocument(ref));
+  }
+
+  void renameDocument(DocumentRef ref, String to) {
+    if (ref == _openRef) _pendingOpen = DocumentRef(name: to, kind: ref.kind);
+    _send(wire.renameDocument(ref, to));
+  }
+
+  void duplicateDocument(DocumentRef ref, String to) {
+    _pendingOpen = DocumentRef(name: to, kind: ref.kind);
+    _send(wire.duplicateDocument(ref, to));
+  }
+
+  void patchScreen(String path, String value, {String? gesture}) {
+    if (_refuseWhilePreviewing()) return;
+    _send(wire.patchScreen({path: value}, gesture: gesture));
   }
 
   void reload() => _send(wire.reloadPage());
@@ -485,6 +536,15 @@ class EditorModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setSelection(Iterable<String> ids) {
+    final next = ids.toSet();
+    if (setEquals(next, _selection)) return;
+    _selection
+      ..clear()
+      ..addAll(next);
+    notifyListeners();
+  }
+
   void selectAll() {
     final elements = _snapshot?.elements ?? const <Element>[];
     _selection
@@ -499,10 +559,40 @@ class EditorModel extends ChangeNotifier {
     Element? best;
     for (final element in _snapshot?.elements ?? const <Element>[]) {
       if (!element.enabled) continue;
-      if (!element.bounds.contains(design)) continue;
+      if (!_covers(element, design)) continue;
       if (best == null || element.effectiveLayer >= best.effectiveLayer) best = element;
     }
     return best;
+  }
+
+  bool _covers(Element element, Offset design) {
+    final rect = boundsOf(element);
+    if (element.rotationDeg == 0) return rect.contains(design);
+    final radians = -element.rotationDeg * math.pi / 180;
+    final local = design - rect.center;
+    final rotated = Offset(
+      local.dx * math.cos(radians) - local.dy * math.sin(radians),
+      local.dx * math.sin(radians) + local.dy * math.cos(radians),
+    );
+    return rect.contains(rotated + rect.center);
+  }
+
+  List<Element> lineageOf(Element element) {
+    final elements = _snapshot?.elements ?? const <Element>[];
+    final byPath = <String, Element>{
+      for (final candidate in elements)
+        if (candidate.sourcePath.isNotEmpty) candidate.sourcePath: candidate,
+    };
+    final lineage = <Element>[element];
+    var current = element;
+    for (var guard = 0; guard < elements.length; guard++) {
+      final parentPath = current.parentPath;
+      final parent = parentPath == null ? null : byPath[parentPath];
+      if (parent == null) break;
+      lineage.add(parent);
+      current = parent;
+    }
+    return lineage;
   }
 
   void ensureFitted(Size size) {
@@ -545,119 +635,163 @@ class EditorModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  Offset _pending = Offset.zero;
   Timer? _flushTimer;
 
   ResizeHandle? _handle;
-  Rect? _resizeOrigin;
   String? _resizeId;
 
+  Map<String, Rect> _origins = const {};
+
+  Offset _gestureDelta = Offset.zero;
+
+  Map<String, Rect> _live = const {};
+
+  bool _settling = false;
+
+  static const _flushInterval = Duration(milliseconds: 40);
+
   ResizeHandle? get activeHandle => _handle;
+
+  bool get isGesturing => _origins.isNotEmpty;
+
+  Map<String, Rect> get liveRects => UnmodifiableMapView(_live);
+
+  Rect boundsOf(Element element) => _live[element.id] ?? element.bounds;
 
   void beginResize(ResizeHandle handle) {
     final element = soleSelection;
     if (element == null || isPreviewing) return;
     _handle = handle;
     _resizeId = element.id;
-    _resizeOrigin = element.bounds;
-    _pending = Offset.zero;
+    _origins = {element.id: element.bounds};
+    _gestureDelta = Offset.zero;
+    _live = const {};
     notifyListeners();
   }
 
   void dragBy(Offset delta, {required bool bypassSnapping}) {
     if (isPreviewing) return;
     if (_handle == null && _selection.isEmpty) return;
-    _pending += delta;
     _bypassSnapping = bypassSnapping;
-    _flushTimer ??= Timer(const Duration(milliseconds: 40), _flush);
+    if (_origins.isEmpty) _captureOrigins();
+    if (_origins.isEmpty) return;
+    _gestureDelta += delta;
+    _recompute();
+    _flushTimer ??= Timer(_flushInterval, _flush);
   }
 
   bool _bypassSnapping = false;
 
   void endGesture() {
-    _flush();
+    final sent = _flush();
     _handle = null;
-    _resizeOrigin = null;
     _resizeId = null;
-    _pending = Offset.zero;
-    if (_guides.isNotEmpty) {
-      _guides = const [];
-      notifyListeners();
-    }
+    _origins = const {};
+    _gestureDelta = Offset.zero;
+    _settling = sent;
+    if (!sent) _live = const {};
+    _guides = const [];
+    notifyListeners();
   }
 
-  void _flush() {
+  void _captureOrigins() {
+    final snapshot = _snapshot;
+    if (snapshot == null) return;
+    final dragging = movingSelection;
+    _origins = {
+      for (final element in snapshot.elements)
+        if (dragging.contains(element.id)) element.id: boundsOf(element),
+    };
+    _gestureDelta = Offset.zero;
+  }
+
+  bool _flush() {
+    _flushTimer?.cancel();
     _flushTimer = null;
-    if (_handle != null) {
-      _flushResize();
-    } else {
-      _flushMove();
+    if (_live.isEmpty || _origins.isEmpty) return false;
+
+    final id = _resizeId;
+    final handle = _handle;
+    if (handle != null && id != null) {
+      final rect = _live[id];
+      if (rect == null) return false;
+      _send(
+        wire.patchElement(id, {
+          'position.x': '${rect.left}',
+          'position.y': '${rect.top}',
+          'size.width': '${rect.width}',
+          'size.height': '${rect.height}',
+        }, gesture: 'resize:$id:${handle.name}'),
+      );
+      return true;
     }
+
+    _send(
+      wire.patchElements({
+        for (final entry in _live.entries)
+          entry.key: {
+            'position.x': '${entry.value.left}',
+            'position.y': '${entry.value.top}',
+          },
+      }, gesture: 'drag:${_selection.join(",")}'),
+    );
+    return true;
   }
 
   bool get _snapping => _snapEnabled && !_bypassSnapping;
 
-  void _flushMove() {
+  void _recompute() {
     final snapshot = _snapshot;
-    if (snapshot == null || _selection.isEmpty || _pending == Offset.zero) {
-      return;
-    }
+    if (snapshot == null) return;
+    _live = _handle == null ? _moveTo(snapshot) : _resizeTo(snapshot);
+    notifyListeners();
+  }
 
-    final dragging = movingSelection;
-    final moving = snapshot.elements
-        .where((e) => dragging.contains(e.id))
-        .toList();
-    if (moving.isEmpty) return;
-    final others = snapshot.elements
-        .where((e) => !dragging.contains(e.id))
-        .toList();
+  Map<String, Rect> _moveTo(PageSnapshot snapshot) {
+    final others = [
+      for (final element in snapshot.elements)
+        if (!_origins.containsKey(element.id)) element.bounds,
+    ];
 
-    final snapped = _snapper.snap(
-      moving: moving,
+    final snapped = _snapper.snapRects(
+      moving: _origins.values.toList(),
       others: others,
-      dx: _pending.dx,
-      dy: _pending.dy,
+      dx: _gestureDelta.dx,
+      dy: _gestureDelta.dy,
       screen: snapshot.screen,
       enabled: _snapping,
     );
-    _pending = Offset.zero;
     _guides = snapped.guides;
-    notifyListeners();
 
-    _send(
-      wire.patchElements({
-        for (final element in moving)
-          element.id: {
-            'position.x': '${(element.x + snapped.dx).roundToDouble()}',
-            'position.y': '${(element.y + snapped.dy).roundToDouble()}',
-          },
-      }, gesture: 'drag:${_selection.join(",")}'),
-    );
+    final shift = Offset(snapped.dx, snapped.dy);
+    return {
+      for (final entry in _origins.entries) entry.key: entry.value.shift(shift),
+    };
   }
 
-  void _flushResize() {
-    final snapshot = _snapshot;
+  Map<String, Rect> _resizeTo(PageSnapshot snapshot) {
     final handle = _handle;
-    final origin = _resizeOrigin;
     final id = _resizeId;
-    if (snapshot == null || handle == null || origin == null || id == null) {
-      return;
-    }
+    final origin = id == null ? null : _origins[id];
+    if (handle == null || id == null || origin == null) return const {};
 
-    final others = snapshot.elements.where((e) => e.id != id).toList();
+    final others = [
+      for (final element in snapshot.elements)
+        if (element.id != id) element.bounds,
+    ];
 
     var left = origin.left;
     var right = origin.right;
     var top = origin.top;
     var bottom = origin.bottom;
-    if (handle.movesLeft) left += _pending.dx;
-    if (handle.movesRight) right += _pending.dx;
-    if (handle.movesTop) top += _pending.dy;
-    if (handle.movesBottom) bottom += _pending.dy;
+    if (handle.movesLeft) left += _gestureDelta.dx;
+    if (handle.movesRight) right += _gestureDelta.dx;
+    if (handle.movesTop) top += _gestureDelta.dy;
+    if (handle.movesBottom) bottom += _gestureDelta.dy;
 
     final guides = <Guide>[];
     double snap(double value, bool vertical) {
-      final target = _snapper.nearestTarget(
+      final target = _snapper.nearestEdge(
         value: value,
         vertical: vertical,
         others: others,
@@ -683,16 +817,7 @@ class EditorModel extends ChangeNotifier {
     }
 
     _guides = guides;
-    notifyListeners();
-
-    _send(
-      wire.patchElement(id, {
-        'position.x': '$left',
-        'position.y': '$top',
-        'size.width': '${right - left}',
-        'size.height': '${bottom - top}',
-      }, gesture: 'resize:$id:${handle.name}'),
-    );
+    return {id: Rect.fromLTRB(left, top, right, bottom)};
   }
 
   /// The selection plus everything nested inside it, so dragging a card takes its contents.

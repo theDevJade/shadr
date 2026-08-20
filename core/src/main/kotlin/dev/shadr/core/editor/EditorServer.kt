@@ -327,6 +327,55 @@ class EditorServer(
                     connection.send(encode(ShaderSaved(message.name, packRebuilt = rebuilt)))
                 }
             }
+            is NewDocument -> {
+                val ref = DocumentRef(message.name, message.kind)
+                val refusal = documents.create(ref, message.hud, message.width, message.height)
+                if (refusal != null) {
+                    connection.send(encode(EditorError(refusal)))
+                } else {
+                    broadcastDocuments()
+                    open(connection, ref)
+                }
+            }
+            is DeleteDocument -> {
+                val ref = DocumentRef(message.name, message.kind)
+                val wasOpen = openRef == ref
+                val refusal = documents.delete(ref)
+                if (refusal != null) {
+                    connection.send(encode(EditorError(refusal)))
+                } else {
+                    if (wasOpen) {
+                        session = null
+                        openRef = null
+                    }
+                    broadcastDocuments()
+                    if (wasOpen) documents.list().firstOrNull()?.let { open(connection, it) }
+                }
+            }
+            is RenameDocument -> {
+                val ref = DocumentRef(message.name, message.kind)
+                val wasOpen = openRef == ref
+                val refusal = documents.rename(ref, message.to)
+                if (refusal != null) {
+                    connection.send(encode(EditorError(refusal)))
+                } else {
+                    broadcastDocuments()
+                    if (wasOpen) open(connection, DocumentRef(message.to, message.kind))
+                }
+            }
+            is DuplicateDocument -> {
+                val ref = DocumentRef(message.name, message.kind)
+                val refusal = documents.duplicate(ref, message.to)
+                if (refusal != null) {
+                    connection.send(encode(EditorError(refusal)))
+                } else {
+                    broadcastDocuments()
+                    open(connection, DocumentRef(message.to, message.kind))
+                }
+            }
+            is PatchScreen -> withSession(connection) {
+                it.patchScreen(message.changes, message.gesture)
+            }
             is ReloadPage -> openRef?.let { open(connection, it) }
             is SavePage -> save(connection)
             else -> connection.send(encode(EditorError("unexpected message from client")))
@@ -426,6 +475,10 @@ class EditorServer(
                 )
             },
         )
+    }
+
+    private fun broadcastDocuments() {
+        socket.broadcast(encode(DocumentList(documents.list())))
     }
 
     private fun broadcastShaders() {

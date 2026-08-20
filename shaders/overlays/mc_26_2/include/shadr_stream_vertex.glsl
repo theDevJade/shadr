@@ -62,6 +62,6 @@ bool shadr_stream_place(sampler2D source, vec2 uv) {
     vec2 ndc = pixel / ScreenSize * 2.0 - 1.0;
 
     shadrMode = SHADR_MODE_STREAM;
-    gl_Position = vec4(ndc, SHADR_STREAM_DEPTH, 1.0);
+    gl_Position = vec4(ndc, shadr_depth(SHADR_STREAM_DEPTH), 1.0);
     return true;
 }

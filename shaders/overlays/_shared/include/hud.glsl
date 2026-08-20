@@ -25,6 +25,22 @@ bool is_hud(vec3 Position) {
     return (Position.y < -1000.0);
 }
 
+vec2 shadr_fit(vec2 screen) {
+    float screenAspect = screen.x / screen.y;
+    float designAspect = refRes.x / refRes.y;
+    return screenAspect > designAspect
+        ? vec2(designAspect / screenAspect, 1.0)
+        : vec2(1.0, screenAspect / designAspect);
+}
+
+bool shadr_z_zero_to_one() {
+    return ProjMat[2][2] < 0.5;
+}
+
+float shadr_depth(float depth01) {
+    return shadr_z_zero_to_one() ? depth01 : depth01 * 2.0 - 1.0;
+}
+
 bool make_hud() {
     shadrMode = 0.0;
 
@@ -42,24 +58,19 @@ bool make_hud() {
 
         vec3 pos = vec3(Position.x, y, Position.z) + vec3(0.0, 15000.0, 0.0);
         pos.x *= -1.0;
-        float offset = 0.0;
         if (y < -20000.0) {
             if (y < -40000.0) {
                 pos.y += 20000.0;
-                offset = 1.0 - (ScreenSize.y / 9.0 * 16.0) / ScreenSize.x;
             } else if (y < -30000.0) {
                 pos.y += 10000.0;
-            } else {
-                offset = -1.0 + (ScreenSize.y / 9.0 * 16.0) / ScreenSize.x;
             }
             pos.y += 10000.0;
-            pos.x *= (ScreenSize.y / 9.0 * 16.0) / ScreenSize.x;
         }
 
         pos.xy /= refRes * vec2(X, Y) / 2.0;
-        pos.x += offset;
+        pos.xy *= shadr_fit(ScreenSize);
 #if SHADR_REVERSED_DEPTH
-        pos.z = 0.95 - (pos.z / 100000000.0);
+        pos.z = shadr_depth(0.95 - (pos.z / 100000000.0));
 #else
         pos.z /= 1000000.0;
 #endif

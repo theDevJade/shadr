@@ -7,6 +7,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' hide Element;
 import 'package:flutter/services.dart';
 
+import 'actions.dart';
 import 'model.dart';
 import 'protocol.dart';
 import 'snapping.dart';
@@ -22,9 +23,14 @@ class PageCanvas extends StatefulWidget {
   State<PageCanvas> createState() => _PageCanvasState();
 }
 
-class _PageCanvasState extends State<PageCanvas> {
-  Offset? _pressed;
+const double _dragSlop = 3;
 
+const Duration _doubleClickWindow = Duration(milliseconds: 320);
+const double _doubleClickSlop = 5;
+
+enum _Gesture { idle, pressed, move, marquee, resize, pan }
+
+class _PageCanvasState extends State<PageCanvas> {
   final Map<String, ui.Image> _thumbnails = {};
   final Set<String> _decoding = {};
 
@@ -32,17 +38,48 @@ class _PageCanvasState extends State<PageCanvas> {
   String? _hoveredId;
 
   Rect? _marquee;
+  Set<String> _marqueeBase = const {};
 
-  bool _panning = false;
+  int? _pointer;
+  _Gesture _gesture = _Gesture.idle;
+  Offset _downAt = Offset.zero;
+  Offset _lastLocal = Offset.zero;
+  Element? _pressedOn;
+  bool _pressAdditive = false;
+
+  bool _decideOnRelease = false;
+
+  Duration _lastClickAt = Duration.zero;
+  Offset _lastClickWhere = Offset.zero;
+
+  bool _spaceHeld = false;
   Size _size = Size.zero;
 
   EditorModel get _model => EditorScope.read(context);
 
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_onKey);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    super.dispose();
+  }
+
+  bool _onKey(KeyEvent event) {
+    final held = !textEditingHasFocus() &&
+        HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.space);
+    if (held != _spaceHeld && mounted) setState(() => _spaceHeld = held);
+    return false;
+  }
+
   bool get _additive =>
       HardwareKeyboard.instance.isShiftPressed || HardwareKeyboard.instance.isMetaPressed;
 
-  bool get _wantsPan =>
-      HardwareKeyboard.instance.logicalKeysPressed.contains(LogicalKeyboardKey.space);
+  bool get _bypassSnapping => HardwareKeyboard.instance.isAltPressed;
 
   Element? get _resizable {
     final model = _model;
@@ -55,8 +92,9 @@ class _PageCanvasState extends State<PageCanvas> {
   ResizeHandle? _handleAt(Offset local) {
     final element = _resizable;
     if (element == null) return null;
-    final rect = _model.viewport.toScreenRect(element.bounds);
-    const grab = 7.0;
+    final model = _model;
+    final rect = model.viewport.toScreenRect(model.boundsOf(element));
+    const grab = 8.0;
     for (final handle in ResizeHandle.values) {
       if ((handle.anchorOn(rect) - local).distance <= grab) return handle;
     }
@@ -82,76 +120,183 @@ class _PageCanvasState extends State<PageCanvas> {
     }
   }
 
-  void _onPanStart(DragStartDetails details) {
+  void _onPointerDown(PointerDownEvent event) {
+    if (_pointer != null) return;
     final model = _model;
-    final origin = _pressed ?? details.localPosition;
+    final local = event.localPosition;
 
-    if (_wantsPan) {
-      _panning = true;
+    if (event.buttons & kMiddleMouseButton != 0 || _spaceHeld) {
+      _pointer = event.pointer;
+      _downAt = local;
+      _lastLocal = local;
+      setState(() => _gesture = _Gesture.pan);
+      return;
+    }
+    if (event.kind == PointerDeviceKind.mouse && event.buttons & kPrimaryMouseButton == 0) {
       return;
     }
 
-    final handle = _handleAt(origin);
+    _pointer = event.pointer;
+    _downAt = local;
+    _lastLocal = local;
+    _pressAdditive = _additive;
+
+    final handle = _handleAt(local);
     if (handle != null) {
       model.beginResize(handle);
+      _gesture = _Gesture.resize;
       return;
     }
 
-    final hit = model.hitTest(model.viewport.toDesign(origin));
-    if (hit == null) {
-      final start = model.viewport.toDesign(origin);
-      setState(() => _marquee = Rect.fromPoints(start, start));
-      if (!_additive) model.clearSelection();
+    final leaf = model.hitTest(model.viewport.toDesign(local));
+    if (leaf == null) {
+      _pressedOn = null;
+      _decideOnRelease = false;
+      _marqueeBase = _pressAdditive ? {...model.selection} : const {};
+      _gesture = _Gesture.pressed;
       return;
     }
-    if (!model.selection.contains(hit.id)) model.select(hit.id, additive: _additive);
+
+    final target = _grabbed(model, leaf);
+    _pressedOn = target;
+    _gesture = _Gesture.pressed;
+    if (model.selection.contains(target.id)) {
+      _decideOnRelease = true;
+    } else {
+      _decideOnRelease = false;
+      model.select(target.id, additive: _pressAdditive);
+    }
   }
 
-  void _onPanUpdate(DragUpdateDetails details) {
-    final model = _model;
-    if (_panning) {
-      model.pan(details.delta);
-      return;
+  Element _grabbed(EditorModel model, Element leaf) {
+    final lineage = model.lineageOf(leaf);
+    for (final element in lineage) {
+      if (model.selection.contains(element.id)) return element;
     }
-
-    final marquee = _marquee;
-    if (marquee != null) {
-      final corner = model.viewport.toDesign(details.localPosition);
-      setState(() => _marquee = Rect.fromPoints(marquee.topLeft, corner));
-      return;
-    }
-
-    model.dragBy(
-      details.delta / model.viewport.scale,
-      bypassSnapping: HardwareKeyboard.instance.isAltPressed,
-    );
+    return lineage.last;
   }
 
-  void _onPanEnd() {
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.pointer != _pointer) return;
     final model = _model;
-    final marquee = _marquee;
-    if (marquee != null) {
-      for (final element in model.snapshot?.elements ?? const <Element>[]) {
-        if (element.enabled && marquee.overlaps(element.bounds)) {
-          model.select(element.id, additive: true);
+    final local = event.localPosition;
+    final delta = local - _lastLocal;
+    _lastLocal = local;
+
+    switch (_gesture) {
+      case _Gesture.pan:
+        model.pan(delta);
+      case _Gesture.move:
+      case _Gesture.resize:
+        model.dragBy(delta / model.viewport.scale, bypassSnapping: _bypassSnapping);
+      case _Gesture.marquee:
+        _stretchMarquee(model, local);
+      case _Gesture.pressed:
+        if ((local - _downAt).distance < _dragSlop) return;
+        if (_pressedOn == null) {
+          if (!_pressAdditive) model.clearSelection();
+          setState(() => _gesture = _Gesture.marquee);
+          _stretchMarquee(model, local);
+        } else {
+          _gesture = _Gesture.move;
+          model.dragBy((local - _downAt) / model.viewport.scale, bypassSnapping: _bypassSnapping);
         }
-      }
-      setState(() => _marquee = null);
+      case _Gesture.idle:
+        break;
     }
-    _panning = false;
-    model.endGesture();
+  }
+
+  void _onPointerUp(PointerUpEvent event) {
+    if (event.pointer != _pointer) return;
+    final model = _model;
+
+    switch (_gesture) {
+      case _Gesture.pressed:
+        _click(model, event.timeStamp);
+      case _Gesture.marquee:
+        setState(() => _marquee = null);
+      case _Gesture.move:
+      case _Gesture.resize:
+        model.endGesture();
+      case _Gesture.pan:
+      case _Gesture.idle:
+        break;
+    }
+    _release();
+  }
+
+  void _onPointerCancel(PointerCancelEvent event) {
+    if (event.pointer != _pointer) return;
+    if (_gesture == _Gesture.move || _gesture == _Gesture.resize) _model.endGesture();
+    if (_marquee != null) setState(() => _marquee = null);
+    _release();
+  }
+
+  void _release() {
+    _pointer = null;
+    _pressedOn = null;
+    _decideOnRelease = false;
+    _marqueeBase = const {};
+    if (_gesture != _Gesture.idle) setState(() => _gesture = _Gesture.idle);
+  }
+
+  void _click(EditorModel model, Duration at) {
+    final target = _pressedOn;
+    final near = (_downAt - _lastClickWhere).distance <= _doubleClickSlop;
+    final quick = at - _lastClickAt <= _doubleClickWindow;
+    _lastClickAt = at;
+    _lastClickWhere = _downAt;
+
+    if (target == null) {
+      if (!_pressAdditive) model.clearSelection();
+      return;
+    }
+
+    if (quick && near) {
+      _drillInto(model, target);
+      return;
+    }
+    if (_decideOnRelease) model.select(target.id, additive: _pressAdditive);
+  }
+
+  void _drillInto(EditorModel model, Element grabbed) {
+    final leaf = model.hitTest(model.viewport.toDesign(_downAt));
+    if (leaf == null) return;
+    final lineage = model.lineageOf(leaf);
+    final at = lineage.indexWhere((e) => e.id == grabbed.id);
+    final next = at > 0 ? lineage[at - 1] : leaf;
+    model.select(next.id);
+  }
+
+  void _stretchMarquee(EditorModel model, Offset local) {
+    final viewport = model.viewport;
+    final rect = Rect.fromPoints(viewport.toDesign(_downAt), viewport.toDesign(local));
+    setState(() => _marquee = rect);
+    model.setSelection({
+      ..._marqueeBase,
+      for (final element in model.snapshot?.elements ?? const <Element>[])
+        if (element.enabled && rect.overlaps(model.boundsOf(element))) element.id,
+    });
   }
 
   void _onHover(Offset local) {
     final model = _model;
     final handle = _handleAt(local);
     final hit = handle == null ? model.hitTest(model.viewport.toDesign(local)) : null;
-    if (handle != _hoveredHandle || hit?.id != _hoveredId) {
+    final id = hit == null ? null : _grabbed(model, hit).id;
+    if (handle != _hoveredHandle || id != _hoveredId) {
       setState(() {
         _hoveredHandle = handle;
-        _hoveredId = hit?.id;
+        _hoveredId = id;
       });
     }
+  }
+
+  MouseCursor get _cursor {
+    if (_gesture == _Gesture.pan) return SystemMouseCursors.grabbing;
+    if (_spaceHeld) return SystemMouseCursors.grab;
+    return _hoveredHandle?.cursor ??
+        (_hoveredId != null ? SystemMouseCursors.click : MouseCursor.defer);
   }
 
   void _syncThumbnails(EditorModel model) {
@@ -213,10 +358,7 @@ class _PageCanvasState extends State<PageCanvas> {
         }
 
         return MouseRegion(
-          cursor: _panning || _wantsPan
-              ? SystemMouseCursors.grab
-              : _hoveredHandle?.cursor ??
-                  (_hoveredId != null ? SystemMouseCursors.click : MouseCursor.defer),
+          cursor: _cursor,
           onHover: (event) => _onHover(event.localPosition),
           onExit: (_) {
             if (_hoveredHandle != null || _hoveredId != null) {
@@ -227,34 +369,28 @@ class _PageCanvasState extends State<PageCanvas> {
             }
           },
           child: Listener(
-            onPointerDown: (event) => _pressed = event.localPosition,
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: _onPointerDown,
+            onPointerMove: _onPointerMove,
+            onPointerUp: _onPointerUp,
+            onPointerCancel: _onPointerCancel,
             onPointerSignal: _onPointerSignal,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (details) {
-                if (_handleAt(details.localPosition) != null) return;
-                final hit = model.hitTest(model.viewport.toDesign(details.localPosition));
-                model.select(hit?.id, additive: _additive);
-              },
-              onPanStart: _onPanStart,
-              onPanUpdate: _onPanUpdate,
-              onPanEnd: (_) => _onPanEnd(),
-              child: ClipRect(
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: _PagePainter(
-                      snapshot: snapshot,
-                      selection: model.selection,
-                      guides: model.guides,
-                      viewport: model.viewport,
-                      tokens: context.tokens,
-                      handlesOn: _resizable?.id,
-                      hoveredId: _hoveredId,
-                      marquee: _marquee,
-                      thumbnails: _thumbnailsByClip(model),
-                    ),
-                    size: Size.infinite,
+            child: ClipRect(
+              child: RepaintBoundary(
+                child: CustomPaint(
+                  painter: _PagePainter(
+                    snapshot: snapshot,
+                    selection: model.selection,
+                    guides: model.guides,
+                    viewport: model.viewport,
+                    tokens: context.tokens,
+                    handlesOn: _resizable?.id,
+                    hoveredId: _hoveredId,
+                    marquee: _marquee,
+                    thumbnails: _thumbnailsByClip(model),
+                    live: model.liveRects,
                   ),
+                  size: Size.infinite,
                 ),
               ),
             ),
@@ -276,6 +412,7 @@ class _PagePainter extends CustomPainter {
     required this.hoveredId,
     required this.marquee,
     required this.thumbnails,
+    required this.live,
   });
 
   final PageSnapshot snapshot;
@@ -288,6 +425,10 @@ class _PagePainter extends CustomPainter {
   final Rect? marquee;
 
   final Map<String, ui.Image> thumbnails;
+
+  final Map<String, Rect> live;
+
+  Rect _rectOf(Element element) => live[element.id] ?? element.bounds;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -316,7 +457,7 @@ class _PagePainter extends CustomPainter {
     final visible = viewport.visibleDesignRect(size);
     for (final element in ordered) {
       if (!element.enabled) continue;
-      if (!element.bounds.overlaps(visible)) continue;
+      if (!_rectOf(element).overlaps(visible)) continue;
       _paintElement(canvas, element);
     }
 
@@ -324,7 +465,7 @@ class _PagePainter extends CustomPainter {
       final hovered = snapshot.elements.where((e) => e.id == hoveredId).firstOrNull;
       if (hovered != null) {
         canvas.drawRect(
-          hovered.bounds,
+          _rectOf(hovered),
           Paint()
             ..color = tokens.accent.withValues(alpha: 0.5)
             ..style = PaintingStyle.stroke
@@ -343,7 +484,7 @@ class _PagePainter extends CustomPainter {
   }
 
   void _paintElement(Canvas canvas, Element element) {
-    final rect = element.bounds;
+    final rect = _rectOf(element);
     final opacity = element.opacity / 255.0;
 
     canvas.save();
@@ -367,7 +508,7 @@ class _PagePainter extends CustomPainter {
     }
 
     if (element.isText) {
-      _paintText(canvas, element, opacity);
+      _paintText(canvas, element, rect, opacity);
       canvas.restore();
       return;
     }
@@ -483,7 +624,7 @@ class _PagePainter extends CustomPainter {
     }
   }
 
-  void _paintText(Canvas canvas, Element element, double opacity) {
+  void _paintText(Canvas canvas, Element element, Rect rect, double opacity) {
     const emAtUnitScale = 11.0;
     const scaleUnit = 64.0;
     const baselineFactor = 0.1514;
@@ -493,7 +634,7 @@ class _PagePainter extends CustomPainter {
         text: element.text,
         style: TextStyle(
           fontFamily: canvasFontFamily,
-          fontSize: element.height / scaleUnit * emAtUnitScale,
+          fontSize: rect.height / scaleUnit * emAtUnitScale,
           height: 1.2,
           fontWeight: element.font.contains('semibold') ? FontWeight.w600 : FontWeight.w400,
           color: Color(0xFF000000 | element.color).withValues(alpha: opacity),
@@ -507,17 +648,17 @@ class _PagePainter extends CustomPainter {
       },
     )..layout(maxWidth: snapshot.screen.width);
 
-    final anchorY = element.y + baselineFactor * element.height;
+    final anchorY = rect.top + baselineFactor * rect.height;
     final dx = switch (element.textAlign) {
-      'RIGHT' => element.x - painter.width,
-      'CENTER' => element.x - painter.width / 2,
-      _ => element.x,
+      'RIGHT' => rect.left - painter.width,
+      'CENTER' => rect.left - painter.width / 2,
+      _ => rect.left,
     };
     painter.paint(canvas, Offset(dx, anchorY - painter.height / 2));
   }
 
   void _paintSelection(Canvas canvas, Element element) {
-    final rect = element.bounds;
+    final rect = _rectOf(element);
     canvas.drawRect(
       rect,
       Paint()
@@ -581,5 +722,6 @@ class _PagePainter extends CustomPainter {
       old.handlesOn != handlesOn ||
       old.hoveredId != hoveredId ||
       old.marquee != marquee ||
+      !mapEquals(old.live, live) ||
       !mapEquals(old.thumbnails, thumbnails);
 }

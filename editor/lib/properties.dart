@@ -45,8 +45,9 @@ class _PropertiesPanelState extends State<PropertiesPanel> {
                       padding: const EdgeInsets.only(bottom: Insets.lg),
                       children: [
                         if (snapshot.issues.isNotEmpty) _Issues(issues: snapshot.issues),
+                        if (selected == null && count == 0) _PageSection(snapshot: snapshot),
                         if (selected == null)
-                          _NoSelection(count: count)
+                          if (count > 1) _NoSelection(count: count) else const SizedBox.shrink()
                         else if (_tab == 0)
                           ..._fields(context, model, selected)
                         else
@@ -519,6 +520,120 @@ class _ActionField extends StatelessWidget {
           onCommit: onCommit,
         ),
       );
+}
+
+class _PageSection extends StatelessWidget {
+  const _PageSection({required this.snapshot});
+
+  final PageSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    final model = EditorScope.of(context);
+    final tokens = context.tokens;
+    final screen = snapshot.screen;
+    final editable = !model.isPreviewing;
+
+    if (snapshot.kind == DocumentKind.component) {
+      return Section(
+        title: 'Component',
+        children: [
+          _Hint(
+            "'${snapshot.name}' is a component. It has no screen of its own; the page that "
+            'places it decides where it sits and how big it is.',
+          ),
+        ],
+      );
+    }
+
+    void set(String path, String value, {bool continuous = false}) =>
+        model.patchScreen(path, value, gesture: continuous ? 'screen:$path' : null);
+
+    return Section(
+      title: 'Page',
+      trailing: Text(
+        screen.hud ? 'HUD' : 'menu',
+        style: context.texts.labelSmall?.copyWith(
+          color: screen.hud ? tokens.attention : tokens.textTertiary,
+        ),
+      ),
+      children: [
+        PropertyRow(
+          label: 'Mode',
+          child: ChoiceField<bool>(
+            value: screen.hud,
+            enabled: editable,
+            options: const [
+              (value: false, icon: null, label: 'Menu'),
+              (value: true, icon: null, label: 'HUD'),
+            ],
+            onChanged: (hud) => set('hud', '$hud'),
+          ),
+        ),
+        _Hint(
+          screen.hud
+              ? 'This page draws over the game and leaves the camera alone, so the player keeps '
+                  'moving and looking around. Give it a cursor size to hand back a pointer.'
+              : 'This page locks the camera and gives the player a cursor, so clicks land on it.',
+        ),
+        PropertyRow(
+          label: 'W / H',
+          child: Row(
+            children: [
+              Expanded(
+                child: ScrubField(
+                  label: 'w',
+                  value: screen.width,
+                  enabled: editable,
+                  min: 16,
+                  onChanged: (v) => set('width', '$v', continuous: true),
+                ),
+              ),
+              const SizedBox(width: Insets.sm),
+              Expanded(
+                child: ScrubField(
+                  label: 'h',
+                  value: screen.height,
+                  enabled: editable,
+                  min: 16,
+                  onChanged: (v) => set('height', '$v', continuous: true),
+                ),
+              ),
+            ],
+          ),
+        ),
+        PropertyRow(
+          label: 'Cursor',
+          child: Row(
+            children: [
+              Expanded(
+                child: ScrubField(
+                  label: 'size',
+                  value: screen.cursorSize,
+                  enabled: editable,
+                  min: 0,
+                  onChanged: (v) => set('cursorSize', '$v', continuous: true),
+                ),
+              ),
+              const SizedBox(width: Insets.sm),
+              Expanded(
+                child: ScrubField(
+                  label: 'speed',
+                  value: screen.cursorSpeed,
+                  enabled: editable,
+                  min: 0,
+                  step: 0.1,
+                  onChanged: (v) => set('cursorSpeed', '$v', continuous: true),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (screen.cursorSize <= 0 && !screen.hud)
+          const _Hint('A cursor of 0 makes this a HUD when it is loaded again.'),
+      ],
+    );
+  }
 }
 
 class _NoSelection extends StatelessWidget {

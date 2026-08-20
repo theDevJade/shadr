@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' hide Element;
 import 'actions.dart';
 import 'canvas.dart';
 import 'chrome.dart';
+import 'documents.dart';
 import 'layers.dart';
 import 'images.dart';
 import 'model.dart';
@@ -291,7 +292,7 @@ class _Toolbar extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
             child: Text('shadr', style: context.texts.titleSmall),
           ),
-          if (model.documents.isNotEmpty) const _DocumentPicker(),
+          const DocumentBar(),
           const Spacer(),
           if (snapshot?.dirty ?? false)
             Padding(
@@ -370,62 +371,6 @@ class _Divider extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: Insets.sm),
         color: colour,
       );
-}
-
-class _DocumentPicker extends StatelessWidget {
-  const _DocumentPicker();
-
-  @override
-  Widget build(BuildContext context) {
-    final model = EditorScope.of(context);
-    final tokens = context.tokens;
-    final open = model.openRef;
-
-    return Container(
-      height: 24,
-      padding: const EdgeInsets.symmetric(horizontal: Insets.sm),
-      decoration: BoxDecoration(
-        color: tokens.surfaceSunken,
-        borderRadius: Corners.small,
-        border: Border.all(color: tokens.border),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<DocumentRef>(
-          value: model.documents.contains(open) ? open : null,
-          isDense: true,
-          hint: Text('Open…', style: context.texts.bodySmall),
-          dropdownColor: tokens.surfaceRaised,
-          icon: Icon(Icons.expand_more, size: 14, color: tokens.textTertiary),
-          style: context.texts.bodyMedium,
-          items: [
-            for (final ref in model.documents)
-              DropdownMenuItem(
-                value: ref,
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      ref.kind == DocumentKind.component
-                          ? Icons.extension_outlined
-                          : Icons.description_outlined,
-                      size: 13,
-                      color: ref.kind == DocumentKind.component
-                          ? tokens.attention
-                          : tokens.textTertiary,
-                    ),
-                    const SizedBox(width: Insets.sm),
-                    Text(ref.name, style: context.texts.bodyMedium),
-                  ],
-                ),
-              ),
-          ],
-          onChanged: (ref) {
-            if (ref != null) model.open(ref);
-          },
-        ),
-      ),
-    );
-  }
 }
 
 class _StatusBar extends StatelessWidget {
@@ -555,17 +500,32 @@ class _Disconnected extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final model = EditorScope.of(context);
+    final connected = model.status == ConnectionStatus.connected;
+    final empty = connected && model.documents.isEmpty;
+
     return EmptyState(
-      icon: model.status == ConnectionStatus.connecting ? Icons.cable : Icons.power_off_outlined,
+      icon: switch (model.status) {
+        ConnectionStatus.connecting => Icons.cable,
+        ConnectionStatus.connected => Icons.note_add_outlined,
+        _ => Icons.power_off_outlined,
+      },
       title: switch (model.status) {
         ConnectionStatus.connecting => 'Connecting…',
-        ConnectionStatus.connected => 'No document open',
+        ConnectionStatus.connected => empty ? 'Nothing to edit yet' : 'No document open',
         _ => 'Not connected',
       },
-      detail: model.message,
-      action: model.status == ConnectionStatus.connecting
-          ? null
-          : OutlinedButton(onPressed: model.connect, child: const Text('Reconnect')),
+      detail: empty
+          ? 'Make a page for a menu or a HUD, or a component other pages can place.'
+          : model.message,
+      action: switch (model.status) {
+        ConnectionStatus.connecting => null,
+        ConnectionStatus.connected => FilledButton.icon(
+            onPressed: () => showNewDocumentDialog(context, model),
+            icon: const Icon(Icons.add, size: 15),
+            label: const Text('New document'),
+          ),
+        _ => OutlinedButton(onPressed: model.connect, child: const Text('Reconnect')),
+      },
     );
   }
 }

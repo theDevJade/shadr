@@ -13,7 +13,6 @@ in vec3 Normal;
 #moj_import <minecraft:projection.glsl>
 #moj_import <minecraft:sample_lightmap.glsl>
 #moj_import <minecraft:globals.glsl>
-#moj_import <hud.glsl>
 
 #ifndef NO_OVERLAY
 uniform sampler2D Sampler1;
@@ -42,6 +41,8 @@ out vec4 overlayColor;
 #endif
 
 out vec2 texCoord0;
+
+#moj_import <hud.glsl>
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);

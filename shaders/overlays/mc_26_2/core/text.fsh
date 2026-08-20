@@ -5,7 +5,6 @@
 #endif
 
 #moj_import <minecraft:dynamictransforms.glsl>
-#moj_import <hud_fragment.glsl>
 
 uniform sampler2D Sampler0;
 
@@ -18,6 +17,8 @@ in vec4 vertexColor;
 in vec2 texCoord0;
 
 out vec4 fragColor;
+
+#moj_import <hud_fragment.glsl>
 
 void main() {
 #if !defined(IS_GUI) && !defined(IS_SEE_THROUGH)

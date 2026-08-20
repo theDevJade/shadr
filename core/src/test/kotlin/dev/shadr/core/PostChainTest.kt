@@ -120,7 +120,8 @@ class PostChainTest {
     @Test
     fun `hud_glsl still writes the depth base the post pass assumes`() {
         val hud = File(shared, "include/hud.glsl").readText()
-        val base = Regex("""pos\.z\s*=\s*([0-9.]+)\s*-""").find(hud)?.groupValues?.get(1)?.toDouble()
+        val base = Regex("""pos\.z\s*=\s*(?:shadr_depth\()?\s*([0-9.]+)\s*-""")
+            .find(hud)?.groupValues?.get(1)?.toDouble()
         assertEquals(
             HudPositionCalculator.HUD_DEPTH_BASE, base,
             "hud.glsl no longer writes the depth base shadr_post.glsl keys off",

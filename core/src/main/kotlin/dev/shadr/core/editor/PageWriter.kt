@@ -94,6 +94,11 @@ class PageWriter {
         val deletedIds = before.keys - edited.elements.map { it.id }.toSet()
         saved += remove(blocks, deletedIds.mapNotNull { before[it] }, skipped)
 
+        if (original.screen != edited.screen) {
+            writeScreen(root, original.screen, edited.screen, replaced)
+            saved++
+        }
+
         if (original.animations != edited.animations) {
             writeAnimations(root, original.animations, edited.animations, replaced)
             saved++
@@ -160,6 +165,47 @@ class PageWriter {
     private fun currentNumber(node: MappingNode, path: String): Double {
         val scalar = resolve(node, path) as? ScalarNode ?: return 0.0
         return scalar.value.trim().toDoubleOrNull() ?: 0.0
+    }
+
+    private fun writeScreen(
+        root: MappingNode,
+        before: dev.shadr.core.page.ScreenDef,
+        after: dev.shadr.core.page.ScreenDef,
+        replaced: MutableList<String>,
+    ) {
+        val changes = linkedMapOf<String, Value>()
+        if (before.width != after.width) changes["width"] = Value.Num(after.width)
+        if (before.height != after.height) changes["height"] = Value.Num(after.height)
+        if (before.offsetX != after.offsetX) changes["offsetX"] = Value.Num(after.offsetX)
+        if (before.offsetY != after.offsetY) changes["offsetY"] = Value.Num(after.offsetY)
+        if (before.hitboxOffsetX != after.hitboxOffsetX) {
+            changes["hitboxOffsetX"] = Value.Num(after.hitboxOffsetX)
+        }
+        if (before.hitboxOffsetY != after.hitboxOffsetY) {
+            changes["hitboxOffsetY"] = Value.Num(after.hitboxOffsetY)
+        }
+        if (before.cursorSize != after.cursorSize) changes["cursorSize"] = Value.Num(after.cursorSize)
+        if (before.cursorSpeed != after.cursorSpeed) changes["cursorSpeed"] = Value.Num(after.cursorSpeed)
+        if (before.cursorLayer != after.cursorLayer) changes["cursorLayer"] = Value.Num(after.cursorLayer)
+        if (before.cursorUnicode != after.cursorUnicode) {
+            changes["cursorUnicode"] = Value.Text(after.cursorUnicode)
+        }
+        if (before.previewDefaultZoom != after.previewDefaultZoom) {
+            changes["preview.defaultZoom"] = Value.Num(after.previewDefaultZoom)
+        }
+        if (before.hud != after.hud) changes["hud"] = Value.Flag(after.hud)
+        if (changes.isEmpty()) return
+
+        val screen = (root.get("screen") as? MappingNode) ?: MappingNode(
+            Tag.MAP,
+            mutableListOf(),
+            DumperOptions.FlowStyle.BLOCK,
+        ).also { root.put("screen", it) }
+
+        for ((path, value) in changes) {
+            if (replacesExpression(screen, path)) replaced += "screen.$path"
+            put(screen, path, value)
+        }
     }
 
     private fun writeAnimations(
@@ -456,6 +502,7 @@ class PageWriter {
     private sealed interface Value {
         data class Num(val value: Double) : Value
         data class Text(val value: String) : Value
+        data class Flag(val value: Boolean) : Value
         data class Actions(val value: List<dev.shadr.core.page.ActionSpec>) : Value
     }
 
@@ -591,6 +638,13 @@ class PageWriter {
 
     private fun scalar(value: Value): ScalarNode = when (value) {
         is Value.Actions -> error("an action list is not a scalar")
+        is Value.Flag -> ScalarNode(
+            Tag.BOOL,
+            value.value.toString(),
+            null,
+            null,
+            DumperOptions.ScalarStyle.PLAIN,
+        )
         is Value.Num -> {
             val text = if (value.value == value.value.toLong().toDouble()) {
                 value.value.toLong().toString()

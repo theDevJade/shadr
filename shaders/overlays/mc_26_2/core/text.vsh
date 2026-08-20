@@ -15,8 +15,6 @@ in ivec2 UV2;
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:projection.glsl>
 #moj_import <minecraft:globals.glsl>
-#moj_import <hud.glsl>
-#moj_import <shadr_stream_vertex.glsl>
 
 uniform sampler2D Sampler0;
 
@@ -28,6 +26,9 @@ out float cylindricalVertexDistance;
 
 out vec4 vertexColor;
 out vec2 texCoord0;
+
+#moj_import <hud.glsl>
+#moj_import <shadr_stream_vertex.glsl>
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);

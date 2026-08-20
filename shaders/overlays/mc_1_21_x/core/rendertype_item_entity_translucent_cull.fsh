@@ -3,7 +3,6 @@
 #moj_import <minecraft:fog.glsl>
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:globals.glsl>
-#moj_import <hud_fragment.glsl>
 #moj_import <hud_shape.glsl>
 #moj_import <shadr_shaders.glsl>
 
@@ -17,6 +16,8 @@ in vec2 texCoord1;
 in vec4 shadrTint;
 
 out vec4 fragColor;
+
+#moj_import <hud_fragment.glsl>
 
 void main() {
     vec4 color = texture(Sampler0, texCoord0);

@@ -123,7 +123,7 @@ data class SaveResult(
     val expressionsReplaced: List<String> = emptyList(),
 ) : EditorMessage
 
-const val PROTOCOL_VERSION = 1
+const val PROTOCOL_VERSION = 2
 
 val editorJson: Json = Json {
     classDiscriminator = "t"

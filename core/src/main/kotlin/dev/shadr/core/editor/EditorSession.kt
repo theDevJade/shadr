@@ -19,6 +19,7 @@ import dev.shadr.core.page.AnimationStep
 import dev.shadr.core.page.GuiAnimationDef
 import dev.shadr.core.page.Page
 import dev.shadr.core.page.Rounding
+import dev.shadr.core.page.ScreenDef
 
 class EditorSession(
     initial: Page,
@@ -152,6 +153,47 @@ class EditorSession(
         page = page.copy(elements = elements)
         notifyChanged()
         return true
+    }
+
+    fun patchScreen(changes: Map<String, String>, gesture: String? = null): Boolean {
+        if (previewTick != null) return false
+        var screen = page.screen
+        for ((path, raw) in changes) screen = applyScreenChange(screen, path, raw)
+        if (screen == page.screen) return false
+
+        checkpoint(gesture)
+        page = page.copy(screen = screen)
+        notifyChanged()
+        return true
+    }
+
+    private fun applyScreenChange(screen: ScreenDef, path: String, raw: String): ScreenDef {
+        val number = raw.trim().toDoubleOrNull()
+        val flag = raw.trim().toBooleanStrictOrNull()
+        return when (path) {
+            "screen.width", "width" -> number?.let { screen.copy(width = it.coerceAtLeast(1.0)) } ?: screen
+            "screen.height", "height" -> number?.let { screen.copy(height = it.coerceAtLeast(1.0)) } ?: screen
+            "screen.offsetX", "offsetX" -> number?.let { screen.copy(offsetX = it) } ?: screen
+            "screen.offsetY", "offsetY" -> number?.let { screen.copy(offsetY = it) } ?: screen
+            "screen.hitboxOffsetX", "hitboxOffsetX" -> number?.let { screen.copy(hitboxOffsetX = it) } ?: screen
+            "screen.hitboxOffsetY", "hitboxOffsetY" -> number?.let { screen.copy(hitboxOffsetY = it) } ?: screen
+            "screen.cursorSpeed", "cursorSpeed" -> number?.let { screen.copy(cursorSpeed = it) } ?: screen
+            "screen.cursorLayer", "cursorLayer" -> number?.let { screen.copy(cursorLayer = it) } ?: screen
+            "screen.cursorUnicode", "cursorUnicode" -> raw.ifBlank { null }?.let { screen.copy(cursorUnicode = it) } ?: screen
+            "screen.previewDefaultZoom", "previewDefaultZoom" ->
+                number?.let { screen.copy(previewDefaultZoom = it) } ?: screen
+            "screen.cursorSize", "cursorSize" -> number?.let { size ->
+                val clamped = size.coerceAtLeast(0.0)
+                screen.copy(cursorSize = clamped, hud = if (clamped <= 0.0) true else screen.hud)
+            } ?: screen
+            "screen.hud", "hud" -> flag?.let { wanted ->
+                screen.copy(
+                    hud = wanted,
+                    cursorSize = if (!wanted && screen.cursorSize <= 0.0) DEFAULT_CURSOR_SIZE else screen.cursorSize,
+                )
+            } ?: screen
+            else -> screen
+        }
     }
 
     fun add(type: String, x: Double, y: Double, width: Double, height: Double): Element {
@@ -340,5 +382,9 @@ class EditorSession(
         "right" -> TextAlignment.RIGHT
         "center", "centre", "middle" -> TextAlignment.CENTER
         else -> null
+    }
+
+    companion object {
+        const val DEFAULT_CURSOR_SIZE = 10.0
     }
 }

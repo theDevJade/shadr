@@ -77,11 +77,12 @@ Map<String, dynamic> snapshotJson({
   bool dirty = false,
   List<Map<String, dynamic>> animations = const [],
   String kind = 'PAGE',
+  Map<String, dynamic> screen = const {'width': 1920.0, 'height': 1080.0},
 }) =>
     {
       't': 'snapshot',
       'name': name,
-      'screen': {'width': 1920.0, 'height': 1080.0},
+      'screen': screen,
       'elements': [
         for (final e in elements)
           {

@@ -12,20 +12,20 @@ in vec3 Normal;
 #moj_import <minecraft:dynamictransforms.glsl>
 #moj_import <minecraft:projection.glsl>
 #moj_import <minecraft:globals.glsl>
-#moj_import <hud.glsl>
 
 uniform sampler2D Sampler2;
+
+out vec3 shadrWorldPos;
+flat out vec3 shadrEye;
 
 out float sphericalVertexDistance;
 out float cylindricalVertexDistance;
 out vec4 vertexColor;
 out vec2 texCoord0;
 out vec2 texCoord1;
-out vec2 texCoord2;
 out vec4 shadrTint;
 
-out vec3 shadrWorldPos;
-flat out vec3 shadrEye;
+#moj_import <hud.glsl>
 
 void main() {
     gl_Position = ProjMat * ModelViewMat * vec4(Position, 1.0);
@@ -37,7 +37,6 @@ void main() {
 
     texCoord0 = UV0;
     texCoord1 = UV1;
-    texCoord2 = vec2(UV2);
     shadrTint = Color;
 
     shadrWorldPos = Position + ModelOffset;

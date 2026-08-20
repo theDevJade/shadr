@@ -3,7 +3,7 @@ library;
 import 'dart:convert';
 import 'dart:ui' show Rect;
 
-const protocolVersion = 1;
+const protocolVersion = 2;
 
 const blurPanelLayer = -5000.0;
 
@@ -35,6 +35,10 @@ class ScreenDef {
     required this.height,
     this.offsetX = 0,
     this.offsetY = 0,
+    this.hud = false,
+    this.cursorSize = 10,
+    this.cursorSpeed = 1,
+    this.cursorLayer = 9700,
   });
 
   final double width;
@@ -42,11 +46,21 @@ class ScreenDef {
   final double offsetX;
   final double offsetY;
 
+  final bool hud;
+
+  final double cursorSize;
+  final double cursorSpeed;
+  final double cursorLayer;
+
   static ScreenDef fromJson(Map<String, dynamic> json) => ScreenDef(
         width: (json['width'] as num?)?.toDouble() ?? 1920,
         height: (json['height'] as num?)?.toDouble() ?? 1080,
         offsetX: (json['offsetX'] as num?)?.toDouble() ?? 0,
         offsetY: (json['offsetY'] as num?)?.toDouble() ?? 0,
+        hud: (json['hud'] as bool?) ?? false,
+        cursorSize: (json['cursorSize'] as num?)?.toDouble() ?? 10,
+        cursorSpeed: (json['cursorSpeed'] as num?)?.toDouble() ?? 1,
+        cursorLayer: (json['cursorLayer'] as num?)?.toDouble() ?? 9700,
       );
 }
 
@@ -391,6 +405,33 @@ class PageSnapshot {
 
 String openDocument(DocumentRef ref) =>
     jsonEncode({'t': 'open', 'name': ref.name, 'kind': ref.wireKind});
+
+String newDocument(
+  DocumentRef ref, {
+  bool hud = false,
+  double width = 1920,
+  double height = 1080,
+}) =>
+    jsonEncode({
+      't': 'newDocument',
+      'name': ref.name,
+      'kind': ref.wireKind,
+      'hud': hud,
+      'width': width,
+      'height': height,
+    });
+
+String deleteDocument(DocumentRef ref) =>
+    jsonEncode({'t': 'deleteDocument', 'name': ref.name, 'kind': ref.wireKind});
+
+String renameDocument(DocumentRef ref, String to) =>
+    jsonEncode({'t': 'renameDocument', 'name': ref.name, 'kind': ref.wireKind, 'to': to});
+
+String duplicateDocument(DocumentRef ref, String to) =>
+    jsonEncode({'t': 'duplicateDocument', 'name': ref.name, 'kind': ref.wireKind, 'to': to});
+
+String patchScreen(Map<String, String> changes, {String? gesture}) =>
+    jsonEncode({'t': 'patchScreen', 'changes': changes, 'gesture': gesture});
 
 String patchElement(String elementId, Map<String, String> changes, {String? gesture}) =>
     jsonEncode({'t': 'patch', 'elementId': elementId, 'changes': changes, 'gesture': gesture});
