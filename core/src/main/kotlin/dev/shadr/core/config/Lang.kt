@@ -32,6 +32,7 @@ class Lang(private val overrides: Map<String, String> = emptyMap()) {
             "pack-not-sent" to "this server does not send a pack (hosting is {mode})",
             "pack-sent" to "sent you the pack",
             "editor-disabled" to "editor is disabled; set editor.web.enabled in config.yml",
+            "editor-not-started" to "editor is on in config.yml but did not start: {reason}",
             "editor-link" to "open the editor",
             "editor-link-expiry" to "(this link expires in {minutes} minutes)",
             "editor-unauthenticated" to "editor is running without authentication: {url}",

@@ -32,6 +32,7 @@ object EditorLauncher {
         images: ImageSource? = null,
         videos: VideoSource? = null,
         log: (String) -> Unit = {},
+        onFailure: (String) -> Unit = {},
     ): EditorServer? {
         if (!config.enabled) return null
 
@@ -39,8 +40,10 @@ object EditorLauncher {
             null -> null
             is EditorTls.Result.Ready -> resolved.context
             is EditorTls.Result.Failed -> {
-                log("editor TLS is configured incorrectly: ${resolved.reason}")
+                val reason = "TLS is configured incorrectly: ${resolved.reason}"
+                log("editor $reason")
                 log("editor not started, fix the keystore, or clear editor.web.tls-keystore")
+                onFailure(reason)
                 return null
             }
         }
@@ -61,7 +64,14 @@ object EditorLauncher {
             webRoot = resolveUiDir(config, dataFolder),
             tls = tls,
         )
-        server.start()
+
+        runCatching { server.start() }.onFailure { error ->
+            val reason = listenFailure(config, error)
+            log("editor not started: $reason")
+            onFailure(reason)
+            runCatching { server.stop() }
+            return null
+        }
 
         log("editor on ${server.url()}")
         if (auth == EditorAuth.Open) {
@@ -73,6 +83,22 @@ object EditorLauncher {
             )
         }
         return server
+    }
+
+    private fun listenFailure(config: EditorWebConfig, error: Throwable): String {
+        val detail = error.message?.takeIf { it.isNotBlank() } ?: error::class.simpleName.orEmpty()
+        val address = "${config.bind}:${config.port}"
+        if (error !is java.net.BindException && error !is java.net.SocketException) {
+            return "could not listen on $address ($detail)"
+        }
+        return if (detail.contains("in use", ignoreCase = true)) {
+            "port ${config.port} is already taken on ${config.bind} ($detail); " +
+                "set editor.web.port to a free port"
+        } else {
+            "cannot bind $address ($detail); editor.web.bind is the interface this server listens on, " +
+                "so it has to be an address this machine owns. Use 0.0.0.0 to listen everywhere " +
+                "and put the address players type into editor.web.public-host"
+        }
     }
 
     private fun resolveTls(config: EditorWebConfig, dataFolder: File): EditorTls.Result? {

@@ -419,6 +419,36 @@ class EditorAuthTest {
     }
 
     @Test
+    fun `a taken port is reported as a launch failure, not as a disabled editor`() {
+        val dir = kotlin.io.path.createTempDirectory("shadr-launch-busy").toFile()
+        val holder = EditorLauncher.start(webConfig(48447), dir, Documents())
+        assertNotNull(holder)
+        try {
+            val reasons = mutableListOf<String>()
+            val blocked = EditorLauncher.start(
+                webConfig(48447), dir, Documents(), onFailure = { reasons += it },
+            )
+            assertEquals(null, blocked)
+            assertEquals(1, reasons.size, "the failure was not reported: $reasons")
+            assertTrue(reasons.single().contains("48447"), "the reason names no port: ${reasons.single()}")
+        } finally {
+            holder.stop()
+        }
+    }
+
+    @Test
+    fun `an unbindable address is reported with the bind setting named`() {
+        val dir = kotlin.io.path.createTempDirectory("shadr-launch-bind").toFile()
+        val reasons = mutableListOf<String>()
+        val server = EditorLauncher.start(
+            webConfig(48448).copy(bind = "203.0.113.9"), dir, Documents(), onFailure = { reasons += it },
+        )
+        assertEquals(null, server)
+        assertEquals(1, reasons.size, "the failure was not reported: $reasons")
+        assertTrue(reasons.single().contains("editor.web.bind"), "the reason is unhelpful: ${reasons.single()}")
+    }
+
+    @Test
     fun `the launcher returns null when the editor is disabled`() {
         val dir = kotlin.io.path.createTempDirectory("shadr-launch-off").toFile()
         assertEquals(

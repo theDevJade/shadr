@@ -68,11 +68,12 @@ class ShadrPlugin : JavaPlugin() {
     private var archive: PackArchive? = null
     private var packUrl: String? = null
     private var editor: EditorServer? = null
+    private var editorFailure: String? = null
     private var updates: UpdateService? = null
 
     override fun onEnable() {
         saveDefaultDirectories()
-        config = ShadrConfig.load(File(dataFolder, "config.yml"))
+        config = loadConfig()
         lang = loadLang()
 
         val backend = if (config.rendering.packetEntities) {
@@ -143,7 +144,21 @@ class ShadrPlugin : JavaPlugin() {
         logger.info("shadr disabled")
     }
 
+    private fun restartEditor() {
+        editor?.stop()
+        editor = null
+        startEditor()
+    }
+
     private fun startEditor() {
+        editorFailure = null
+        if (!config.editor.web.enabled) {
+            logger.info(
+                "shadr: the web editor is off; editor.web.enabled is not true in ${configFile().absolutePath}",
+            )
+            return
+        }
+
         editor = runCatching {
             EditorLauncher.start(
                 config = config.editor.web,
@@ -161,9 +176,11 @@ class ShadrPlugin : JavaPlugin() {
                 images = dev.shadr.pack.AtlasImageSource(File(dataFolder, "contents")) { lastAtlas },
                 videos = dev.shadr.pack.LibraryVideoSource(File(dataFolder, "contents")),
                 log = { logger.info("shadr: $it") },
+                onFailure = { editorFailure = it },
             )
         }.getOrElse {
-            logger.severe("shadr: editor not started: ${it.message}")
+            editorFailure = it.message ?: it::class.simpleName
+            logger.severe("shadr: editor not started: $editorFailure")
             null
         }
         editor?.metrics = metrics
@@ -314,6 +331,11 @@ class ShadrPlugin : JavaPlugin() {
         actionRunner.register(verb, handler)
 
     fun reload() {
+        val previousEditor = config.editor.web
+        config = loadConfig()
+        lang = loadLang()
+        if (config.editor.web != previousEditor) restartEditor()
+
         rebuildPack()
 
         val loader = PageLoader(
@@ -724,8 +746,11 @@ class ShadrPlugin : JavaPlugin() {
     }
 
     private fun editorCommand(sender: CommandSender, sub: String?): Boolean {
-        val running = editor
-            ?: return say(sender, "editor-disabled")
+        val running = editor ?: return if (config.editor.web.enabled) {
+            say(sender, "editor-not-started", "reason" to (editorFailure ?: "see the server console"))
+        } else {
+            say(sender, "editor-disabled")
+        }
 
         if (!sender.hasPermission(EDITOR_PERMISSION)) {
             return say(sender, "no-permission", "permission" to EDITOR_PERMISSION)
@@ -828,6 +853,14 @@ class ShadrPlugin : JavaPlugin() {
 
     private fun say(sender: CommandSender, key: String, vararg placeholders: Pair<String, Any?>) =
         reply(sender, lang.get(key, *placeholders))
+
+    private fun configFile() = File(dataFolder, "config.yml")
+
+    private fun loadConfig(): ShadrConfig = runCatching { ShadrConfig.load(configFile()) }.getOrElse {
+        val kept = if (::config.isInitialized) "keeping the settings already loaded" else "falling back to defaults"
+        logger.severe("shadr: ${configFile().absolutePath} could not be read ($it), $kept")
+        if (::config.isInitialized) config else ShadrConfig()
+    }
 
     private fun loadLang(): dev.shadr.core.config.Lang {
         val file = File(dataFolder, "lang.yml")
