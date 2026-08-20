@@ -20,6 +20,7 @@ bin/
 resourcepack/out/
 dist/
 /*.zip
+/renderdoc/*
 
 # running
 run/

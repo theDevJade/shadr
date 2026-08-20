@@ -100,7 +100,7 @@ public final class MinestomHudSink implements HudSink {
                 hud.parts.remove(draw.getKey());
                 continue;
             }
-            created.setInstance(hud.carrier.getInstance(), hud.carrier.getPosition())
+            created.setInstance(hud.carrier.getInstance(), hud.carrier.getPosition().withYaw(0f).withPitch(0f))
                     .thenRun(() -> {
                         created.addViewer(owner);
                         hud.carrier.addPassenger(created);

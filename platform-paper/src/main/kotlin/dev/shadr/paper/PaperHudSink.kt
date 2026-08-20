@@ -66,7 +66,7 @@ class PaperHudSink(private val plugin: Plugin) : ShadrHudSink {
     override fun mount(player: PlayerId) {
         val bukkit = player.bukkit() ?: return
         huds[bukkit.uniqueId]?.let { return }
-        val mount = bukkit.world.spawn(bukkit.location, TextDisplay::class.java) { display ->
+        val mount = bukkit.world.spawn(hudLocation(bukkit.location), TextDisplay::class.java) { display ->
             display.isPersistent = false
             display.text(net.kyori.adventure.text.Component.empty())
             display.setGravity(false)
@@ -88,7 +88,7 @@ class PaperHudSink(private val plugin: Plugin) : ShadrHudSink {
     }
 
     private fun spawn(owner: Player, hud: PlayerHud, draw: HudDraw): Display {
-        val location: Location = hud.mount.location
+        val location: Location = hudLocation(hud.mount.location)
         val display: Display = when (draw.kind) {
             HudDraw.Kind.ITEM -> owner.world.spawn(location, ItemDisplay::class.java, ::prepare)
             HudDraw.Kind.TEXT -> owner.world.spawn(location, TextDisplay::class.java, ::prepare)
@@ -150,6 +150,11 @@ class PaperHudSink(private val plugin: Plugin) : ShadrHudSink {
     private fun Display.kindMatches(draw: HudDraw): Boolean = when (draw.kind) {
         HudDraw.Kind.TEXT -> this is TextDisplay
         HudDraw.Kind.ITEM -> this is ItemDisplay
+    }
+
+    private fun hudLocation(location: Location): Location = location.also {
+        it.yaw = 0f
+        it.pitch = 0f
     }
 
     private fun PlayerId.bukkit(): Player? = runCatching { Bukkit.getPlayer(UUID.fromString(uuid)) }.getOrNull()

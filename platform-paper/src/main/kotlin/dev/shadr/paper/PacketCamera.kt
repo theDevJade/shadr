@@ -8,8 +8,6 @@ package dev.shadr.paper
 
 import dev.shadr.core.PlayerId
 import dev.shadr.core.hud.DisplayMeta
-import dev.shadr.paper.nms.FakeEntityKind
-import dev.shadr.paper.nms.MetaValue
 import dev.shadr.paper.nms.PacketBackend
 import org.bukkit.Bukkit
 import org.bukkit.Location
@@ -28,7 +26,7 @@ class PacketCamera(
     private val postEffects: () -> Boolean = { false },
 ) : ShadrCamera {
     private class Session(
-        val eyeId: Int,
+        val eye: Entity,
         val seat: Entity,
         val origin: Location,
         var clickTargets: Boolean = false,
@@ -44,40 +42,32 @@ class PacketCamera(
         if (sessions.containsKey(bukkit.uniqueId)) return
 
         val origin = bukkit.location.clone()
-        val eyeLocation = origin.clone().add(0.0, CAMERA_BASE_Y_OFFSET, 0.0)
-        val seat = spawnSeat(bukkit, eyeLocation.clone().add(0.0, CAMERA_SEAT_Y_OFFSET, 0.0))
-        val eyeId = backend.nextEntityId(bukkit)
-        val creeper = postEffects()
-
-        backend.bundle(bukkit) {
-            backend.spawn(
-                bukkit,
-                eyeId,
-                if (creeper) FakeEntityKind.CREEPER else FakeEntityKind.TEXT_DISPLAY,
-                eyeLocation,
-            )
-            backend.metadata(bukkit, eyeId, eyeMeta(creeper))
-            backend.camera(bukkit, eyeId)
+        val base = origin.clone().also {
+            it.yaw = 0f
+            it.pitch = 0f
         }
+        val eyeLocation = base.clone().add(0.0, CAMERA_BASE_Y_OFFSET, 0.0)
+        val eye = if (postEffects()) spawnPostEffectCamera(bukkit, eyeLocation)
+        else spawnHidden(bukkit, eyeLocation)
+        val seat = spawnHidden(bukkit, eyeLocation.clone().add(0.0, CAMERA_SEAT_Y_OFFSET, 0.0))
 
         seat.addPassenger(bukkit)
         bukkit.addPotionEffect(PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false))
-        sessions[bukkit.uniqueId] = Session(eyeId, seat, origin)
+        backend.camera(bukkit, eye.entityId)
+        sessions[bukkit.uniqueId] = Session(eye, seat, origin)
     }
 
     override fun stop(player: PlayerId) {
         val bukkit = player.bukkit()
         val session = sessions.remove(player.uuid()) ?: return
-        session.seat.remove()
-        if (bukkit == null) return
-
-        backend.bundle(bukkit) {
+        if (bukkit != null) {
             backend.resetCamera(bukkit)
-            backend.remove(bukkit, session.eyeId)
+            bukkit.leaveVehicle()
+            bukkit.removePotionEffect(PotionEffectType.INVISIBILITY)
         }
-        bukkit.leaveVehicle()
-        bukkit.removePotionEffect(PotionEffectType.INVISIBILITY)
-        bukkit.teleport(session.origin)
+        session.eye.remove()
+        session.seat.remove()
+        bukkit?.teleport(session.origin)
     }
 
     override fun setClickTargetsEnabled(player: PlayerId, enabled: Boolean) {
@@ -92,28 +82,31 @@ class PacketCamera(
         session.relockTicks = RELOCK_INTERVAL_TICKS
 
         if (player.vehicle == null && session.seat.isValid) session.seat.addPassenger(player)
-        backend.camera(player, session.eyeId)
+        if (session.eye.isValid) backend.camera(player, session.eye.entityId)
     }
 
-    override fun isCameraEntity(entity: Entity): Boolean = sessions.values.any { it.seat == entity }
+    override fun isCameraEntity(entity: Entity): Boolean =
+        sessions.values.any { it.eye == entity || it.seat == entity }
 
     override fun stopAll() {
         sessions.keys.toList().forEach { stop(PlayerId(it.toString())) }
     }
 
-    private fun eyeMeta(creeper: Boolean): List<MetaValue> {
-        val slots = backend.slots()
-        return if (creeper) {
-            listOf(MetaValue.of(slots.sharedFlags(), slots.invisibleFlag()))
-        } else {
-            listOf(
-                MetaValue.of(slots.billboard(), slots.billboardFixed()),
-                MetaValue.of(slots.brightness(), slots.brightnessFull()),
+    private fun spawnPostEffectCamera(owner: Player, at: Location): Entity =
+        owner.world.spawn(at, org.bukkit.entity.Creeper::class.java) { mob ->
+            mob.isPersistent = false
+            mob.setGravity(false)
+            mob.setAI(false)
+            mob.isSilent = true
+            mob.isInvulnerable = true
+            mob.isCollidable = false
+            mob.isVisibleByDefault = false
+            mob.addPotionEffect(
+                PotionEffect(PotionEffectType.INVISIBILITY, PotionEffect.INFINITE_DURATION, 0, false, false),
             )
-        }
-    }
+        }.also { owner.showEntity(plugin, it) }
 
-    private fun spawnSeat(owner: Player, at: Location): Entity =
+    private fun spawnHidden(owner: Player, at: Location): Entity =
         owner.world.spawn(at, TextDisplay::class.java) { display ->
             display.isPersistent = false
             display.setGravity(false)

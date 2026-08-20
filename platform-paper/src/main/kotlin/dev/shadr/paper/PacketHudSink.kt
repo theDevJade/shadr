@@ -20,8 +20,10 @@ class PacketHudSink(private val backend: PacketBackend) : ShadrHudSink {
 
     private class PlayerHud(val mountId: Int) {
         val parts = LinkedHashMap<String, Part>()
+        val everSpawned = linkedSetOf(mountId)
         var lastDraws: Map<String, HudDraw> = emptyMap()
         var relockTicks = RELOCK_INTERVAL_TICKS
+        var reassertCycles = REASSERT_EVERY_RELOCKS
     }
 
     private val huds = mutableMapOf<UUID, PlayerHud>()
@@ -32,7 +34,7 @@ class PacketHudSink(private val backend: PacketBackend) : ShadrHudSink {
 
         val mountId = backend.nextEntityId(bukkit)
         backend.bundle(bukkit) {
-            backend.spawn(bukkit, mountId, FakeEntityKind.TEXT_DISPLAY, bukkit.location)
+            backend.spawn(bukkit, mountId, FakeEntityKind.TEXT_DISPLAY, bukkit.hudLocation())
             backend.mountOn(bukkit, mountId)
         }
         huds[bukkit.uniqueId] = PlayerHud(mountId)
@@ -53,9 +55,10 @@ class PacketHudSink(private val backend: PacketBackend) : ShadrHudSink {
 
             for (draw in diff.spawned) {
                 val id = backend.nextEntityId(bukkit)
-                backend.spawn(bukkit, id, Displays.kindOf(draw), bukkit.location)
+                backend.spawn(bukkit, id, Displays.kindOf(draw), bukkit.hudLocation())
                 backend.metadata(bukkit, id, Displays.metaFor(draw, backend.slots()))
                 hud.parts[draw.key] = Part(id, draw.kind)
+                hud.everSpawned += id
             }
 
             for (draw in diff.updated) {
@@ -72,9 +75,7 @@ class PacketHudSink(private val backend: PacketBackend) : ShadrHudSink {
     override fun clear(player: PlayerId) {
         val hud = huds.remove(player.uuid()) ?: return
         val bukkit = player.bukkit() ?: return
-        val ids = hud.parts.values.map { it.id }.toMutableList()
-        ids += hud.mountId
-        backend.remove(bukkit, *ids.toIntArray())
+        backend.remove(bukkit, *hud.everSpawned.toIntArray())
     }
 
     override fun ensureMounted(player: Player) {
@@ -82,9 +83,18 @@ class PacketHudSink(private val backend: PacketBackend) : ShadrHudSink {
         if (--hud.relockTicks > 0) return
         hud.relockTicks = RELOCK_INTERVAL_TICKS
 
+        val reassert = --hud.reassertCycles <= 0
+        if (reassert) hud.reassertCycles = REASSERT_EVERY_RELOCKS
+
         backend.bundle(player) {
             backend.mountOn(player, hud.mountId)
             sendPassengers(player, hud)
+            if (reassert) {
+                for ((key, part) in hud.parts) {
+                    val draw = hud.lastDraws[key] ?: continue
+                    backend.metadata(player, part.id, Displays.metaFor(draw, backend.slots()))
+                }
+            }
         }
     }
 
@@ -92,10 +102,16 @@ class PacketHudSink(private val backend: PacketBackend) : ShadrHudSink {
         backend.passengers(viewer, hud.mountId, *hud.parts.values.map { it.id }.toIntArray())
     }
 
+    private fun Player.hudLocation() = location.also {
+        it.yaw = 0f
+        it.pitch = 0f
+    }
+
     private fun PlayerId.uuid(): UUID = UUID.fromString(uuid)
     private fun PlayerId.bukkit(): Player? = runCatching { Bukkit.getPlayer(uuid()) }.getOrNull()
 
     private companion object {
         const val RELOCK_INTERVAL_TICKS = 5
+        const val REASSERT_EVERY_RELOCKS = 8
     }
 }

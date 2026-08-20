@@ -22,4 +22,8 @@ object BundledAssets {
     )
 
     val GENERATED = setOf("editor-web")
+
+    val REFRESHED: Map<String, List<String>> = mapOf(
+        "shaders" to listOf("shaders/overlays/"),
+    )
 }

@@ -542,18 +542,31 @@ class ShadrPlugin : JavaPlugin() {
 
     fun closePage(player: PlayerId) {
         sessions.remove(player.uuid) ?: return
-        runCatching { Bukkit.getPlayer(java.util.UUID.fromString(player.uuid)) }.getOrNull()
-            ?.let {
-                bridge.streamSink?.stop(it)
-                textCapture?.release(it)
+        val steps = listOf<Pair<String, () -> Unit>>(
+            "hud clear" to { bridge.hud().clear(player) },
+            "stream stop" to {
+                runCatching { Bukkit.getPlayer(java.util.UUID.fromString(player.uuid)) }.getOrNull()
+                    ?.let {
+                        bridge.streamSink?.stop(it)
+                        textCapture?.release(it)
+                    }
+            },
+            "hud remount" to {
+                if (worldEffectsActive()) {
+                    bridge.hud().mount(player)
+                    applyHud(player, emptyList())
+                }
+            },
+            "camera stop" to {
+                bridge.camera().setClickTargetsEnabled(player, false)
+                bridge.camera().stop(player)
+            },
+        )
+        for ((label, step) in steps) {
+            runCatching(step).onFailure {
+                logger.severe("shadr: close step '" + label + "' failed for ${'$'}{player.uuid}: ${'$'}{it.message}")
             }
-        bridge.hud().clear(player)
-        if (worldEffectsActive()) {
-            bridge.hud().mount(player)
-            applyHud(player, emptyList())
         }
-        bridge.camera().setClickTargetsEnabled(player, false)
-        bridge.camera().stop(player)
     }
 
     private fun worldEffectsActive(): Boolean = environment.activeWorldEffects().isNotEmpty()
@@ -844,6 +857,9 @@ class ShadrPlugin : JavaPlugin() {
         val entries = index.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toList()
         val shipped = entries.mapTo(mutableSetOf()) { it.substringBefore('/') }
         val stale = BundledAssets.GENERATED.filterTo(mutableSetOf()) { it in shipped && !isStamped(it) }
+        val refreshed = BundledAssets.REFRESHED
+            .filterKeys { it in shipped && !isStamped(it) }
+            .values.flatten()
 
         var written = 0
         for (entry in entries) {
@@ -851,7 +867,8 @@ class ShadrPlugin : JavaPlugin() {
             val targetDir = BundledAssets.TARGETS[group] ?: continue
             val relative = entry.substringAfter('/')
             val target = File(File(dataFolder, targetDir), relative)
-            if (target.exists() && group !in stale) continue
+            val refresh = refreshed.any { entry.startsWith(it) }
+            if (target.exists() && group !in stale && !refresh) continue
             val stream = getResource("bundled/$entry") ?: run {
                 logger.warning("shadr: bundled/$entry is in the index but not in the jar")
                 null
@@ -861,6 +878,7 @@ class ShadrPlugin : JavaPlugin() {
             written++
         }
         stale.forEach { stamp(it) }
+        BundledAssets.REFRESHED.keys.filter { it in shipped }.forEach { stamp(it) }
         if (written > 0) logger.info("shadr: seeded $written bundled file(s) into ${dataFolder.name}/")
     }
 
@@ -870,14 +888,18 @@ class ShadrPlugin : JavaPlugin() {
     private fun isStamped(group: String): Boolean {
         val file = stampFile(group) ?: return true
         val seeded = runCatching { file.takeIf { it.isFile }?.readText()?.trim() }.getOrNull()
-        return seeded == description.version
+        return seeded == buildFingerprint()
     }
+
+    private fun buildFingerprint(): String = runCatching {
+        "${description.version}:${file.length()}:${file.lastModified()}"
+    }.getOrDefault(description.version)
 
     private fun stamp(group: String) {
         val file = stampFile(group) ?: return
         runCatching {
             file.parentFile.mkdirs()
-            file.writeText(description.version + "\n")
+            file.writeText(buildFingerprint() + "\n")
         }.onFailure { logger.warning("shadr: could not stamp ${file.parentFile.name} (${it.message})") }
     }
 
