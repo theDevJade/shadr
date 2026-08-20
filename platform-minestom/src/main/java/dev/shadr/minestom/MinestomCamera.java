@@ -80,6 +80,7 @@ public final class MinestomCamera implements CameraControl {
         camera.setInstance(entity.getInstance(), eyeOf(entity)).thenRun(() -> {
             camera.addViewer(entity);
             seat.camera = camera;
+            entity.addPassenger(camera);
             if (whenReady != null) whenReady.run();
         }).exceptionally(error -> {
             System.err.println("[shadr] failed to attach hud carrier for " + player.getUuid() + ": " + error);
@@ -142,6 +143,7 @@ public final class MinestomCamera implements CameraControl {
             entity.stopSpectating();
             entity.setInvisible(false);
             if (seat.mount != null) seat.mount.removePassenger(entity);
+            if (seat.follow && seat.camera != null) entity.removePassenger(seat.camera);
         }
         if (seat.mount != null) seat.mount.remove();
         if (seat.camera != null) seat.camera.remove();
@@ -163,8 +165,12 @@ public final class MinestomCamera implements CameraControl {
             final Seat seat = entry.getValue();
             if (seat.camera == null) continue;
             if (seat.follow) {
+                if (--seat.relockTicks > 0) continue;
+                seat.relockTicks = RELOCK_INTERVAL_TICKS;
                 final Player owner = players.entity(new PlayerId(entry.getKey()));
-                if (owner != null) seat.camera.teleport(eyeOf(owner).withView(owner.getPosition()));
+                if (owner != null && !owner.getPassengers().contains(seat.camera)) {
+                    owner.addPassenger(seat.camera);
+                }
                 continue;
             }
             if (--seat.relockTicks > 0) continue;

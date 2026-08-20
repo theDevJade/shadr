@@ -43,7 +43,7 @@ class PaperBridge(
         if (backend != null) PacketHudSink(backend) else PaperHudSink(plugin)
 
     val cameraControl: ShadrCamera =
-        if (backend != null) PacketCamera(backend, postEffects) else PaperCamera(plugin, postEffects)
+        if (backend != null) PacketCamera(backend, plugin, postEffects) else PaperCamera(plugin, postEffects)
 
     val streamSink: PacketStreamSink? = backend?.let { PacketStreamSink(it) }
 

@@ -17,12 +17,14 @@ import org.bukkit.entity.Display
 import org.bukkit.entity.Entity
 import org.bukkit.entity.Player
 import org.bukkit.entity.TextDisplay
+import org.bukkit.plugin.Plugin
 import org.bukkit.potion.PotionEffect
 import org.bukkit.potion.PotionEffectType
 import java.util.UUID
 
 class PacketCamera(
     private val backend: PacketBackend,
+    private val plugin: Plugin,
     private val postEffects: () -> Boolean = { false },
 ) : ShadrCamera {
     private class Session(
@@ -118,7 +120,7 @@ class PacketCamera(
             display.isVisibleByDefault = false
             display.brightness = Display.Brightness(DisplayMeta.BRIGHTNESS_LEVEL, DisplayMeta.BRIGHTNESS_LEVEL)
             display.text(net.kyori.adventure.text.Component.empty())
-        }
+        }.also { owner.showEntity(plugin, it) }
 
     private fun PlayerId.uuid(): UUID = UUID.fromString(uuid)
     private fun PlayerId.bukkit(): Player? = runCatching { Bukkit.getPlayer(uuid()) }.getOrNull()

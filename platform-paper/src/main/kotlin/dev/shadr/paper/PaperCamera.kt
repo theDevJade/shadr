@@ -44,7 +44,7 @@ class PaperCamera(
         val eyeLocation = origin.clone().add(0.0, CAMERA_BASE_Y_OFFSET, 0.0)
         val eye = if (postEffects()) spawnPostEffectCamera(bukkit, eyeLocation)
         else spawnMarker(bukkit, eyeLocation)
-        val seat = spawnMarker(bukkit, eyeLocation.clone().add(0.0, CAMERA_SEAT_Y_OFFSET, 0.0))
+        val seat = spawnMarker(bukkit, eyeLocation.clone().add(0.0, CAMERA_SEAT_Y_OFFSET, 0.0), show = true)
 
         seat.addPassenger(bukkit)
         bukkit.spectatorTarget = null
@@ -114,14 +114,14 @@ class PaperCamera(
             )
         }
 
-    private fun spawnMarker(owner: Player, at: Location): Entity =
+    private fun spawnMarker(owner: Player, at: Location, show: Boolean = false): Entity =
         owner.world.spawn(at, TextDisplay::class.java) { display ->
             display.isPersistent = false
             display.setGravity(false)
             display.isVisibleByDefault = false
             display.brightness = Display.Brightness(15, 15)
             display.text(net.kyori.adventure.text.Component.empty())
-        }
+        }.also { if (show) owner.showEntity(plugin, it) }
 
     private fun PlayerId.uuid(): UUID = UUID.fromString(uuid)
     private fun PlayerId.bukkit(): Player? = runCatching { Bukkit.getPlayer(uuid()) }.getOrNull()
