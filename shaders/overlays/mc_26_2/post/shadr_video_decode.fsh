@@ -56,10 +56,10 @@ ivec3 mosaic_previous(ivec2 size, int x, int y) {
     return ivec3(round(texelFetch(PrevSampler, ivec2(cx, size.y - 1 - cy), 0).rgb * 255.0));
 }
 
-ivec3 mosaic_expand565(int packed) {
-    int r = (packed >> 11) & 31;
-    int g = (packed >> 5) & 63;
-    int b = packed & 31;
+ivec3 mosaic_expand565(int packedBits) {
+    int r = (packedBits >> 11) & 31;
+    int g = (packedBits >> 5) & 63;
+    int b = packedBits & 31;
     return ivec3((r << 3) | (r >> 2), (g << 2) | (g >> 4), (b << 3) | (b >> 2));
 }
 

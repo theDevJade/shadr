@@ -27,11 +27,11 @@ out vec4 fragColor;
 int shadr_block_expand5(int v) { return (v << 3) | (v >> 2); }
 int shadr_block_expand6(int v) { return (v << 2) | (v >> 4); }
 
-vec3 shadr_block_endpoint(int packed) {
+vec3 shadr_block_endpoint(int packedBits) {
     return vec3(
-        float(shadr_block_expand5((packed >> 11) & 0x1F)),
-        float(shadr_block_expand6((packed >> 5) & 0x3F)),
-        float(shadr_block_expand5(packed & 0x1F))) / 255.0;
+        float(shadr_block_expand5((packedBits >> 11) & 0x1F)),
+        float(shadr_block_expand6((packedBits >> 5) & 0x3F)),
+        float(shadr_block_expand5(packedBits & 0x1F))) / 255.0;
 }
 
 int shadr_probe_word(sampler2D source, ivec2 regionOrigin, int columns, int slot, int index) {
@@ -77,11 +77,11 @@ void main() {
             fragColor = vec4(1.0, 0.0, 1.0, 1.0);
             return;
         }
-        int packed = w0 | (w1 << 7) | (w2 << 14) | (w3 << 21);
+        int packedBits = w0 | (w1 << 7) | (w2 << 14) | (w3 << 21);
         fragColor = vec4(
-            float((packed >> 16) & 0xFF) / 255.0,
-            float((packed >> 8) & 0xFF) / 255.0,
-            float(packed & 0xFF) / 255.0,
+            float((packedBits >> 16) & 0xFF) / 255.0,
+            float((packedBits >> 8) & 0xFF) / 255.0,
+            float(packedBits & 0xFF) / 255.0,
             1.0);
         return;
     }

@@ -38,6 +38,8 @@ import net.minestom.server.instance.InstanceContainer;
 import net.minestom.server.instance.LightingChunk;
 import net.minestom.server.instance.block.Block;
 import net.minestom.server.command.builder.Command;
+import net.minestom.server.command.builder.arguments.ArgumentType;
+import net.minestom.server.command.builder.suggestion.SuggestionEntry;
 import net.minestom.server.timer.TaskSchedule;
 
 import java.io.ByteArrayOutputStream;
@@ -64,8 +66,6 @@ public final class Server {
 
     private static InstanceContainer instance;
     private static MinestomBridge bridge;
-
-    private static Page demoPage;
 
     private static dev.shadr.minestom.MinestomAnvilCapture textCapture;
     private static PageRenderer renderer;
@@ -152,7 +152,7 @@ public final class Server {
             player.setGameMode(GameMode.CREATIVE);
             sendPack(new PlayerId(player.getUuid().toString()));
             player.sendMessage(Component.text(
-                    "shadr: /ui to open the demo page, /editor for a browser link."));
+                    "shadr: /ui <page> to open a page, /editor for a browser link."));
         });
 
         registerCommands();
@@ -183,8 +183,8 @@ public final class Server {
     private static final java.util.Map<String, java.util.Map<String, Long>> AUDIO_DUE =
             new java.util.concurrent.ConcurrentHashMap<>();
 
-    private static java.util.List<dev.shadr.core.video.VideoAudio.Track> audioTracks() {
-        return dev.shadr.core.video.VideoAudio.INSTANCE.tracksOf(demoPage, id -> {
+    private static java.util.List<dev.shadr.core.video.VideoAudio.Track> audioTracks(Page page) {
+        return dev.shadr.core.video.VideoAudio.INSTANCE.tracksOf(page, id -> {
             for (dev.shadr.pack.VideoAssets.Source source : VIDEO_CACHE) {
                 if (source.getClip().getId().equals(id) && source.getAudio() != null) {
                     return source.getClip();
@@ -195,10 +195,14 @@ public final class Server {
     }
 
     private static void tickAudio(long tick) {
-        final java.util.List<dev.shadr.core.video.VideoAudio.Track> tracks = audioTracks();
-        if (tracks.isEmpty()) return;
+        // Every session drives the audio of the page it has open, so one player watching a clip
+        // does not put sound on someone sitting on a silent page.
+        for (Map.Entry<String, UiSession> open : sessions.entrySet()) {
+            final java.util.List<dev.shadr.core.video.VideoAudio.Track> tracks =
+                    audioTracks(open.getValue().getCurrentPage());
+            if (tracks.isEmpty()) continue;
 
-        for (String uuid : sessions.keySet()) {
+            final String uuid = open.getKey();
             final PlayerId id = new PlayerId(uuid);
             final kotlin.Pair<java.util.List<dev.shadr.core.video.VideoAudio.Track>,
                     java.util.Map<String, Long>> step =
@@ -212,21 +216,21 @@ public final class Server {
         }
     }
 
-    private static void stopAudio(PlayerId id) {
+    private static void stopAudio(PlayerId id, Page page) {
         AUDIO_DUE.remove(id.getUuid());
-        for (dev.shadr.core.video.VideoAudio.Track track : audioTracks()) {
+        for (dev.shadr.core.video.VideoAudio.Track track : audioTracks(page)) {
             AUDIO_HOST.stopSound(id, track.getSound());
         }
     }
 
     private static final LoggingActionHost AUDIO_HOST = new LoggingActionHost();
 
-    private static void openUi(Player player) {
+    private static void openUi(Player player, Page page) {
         final PlayerId id = new PlayerId(player.getUuid().toString());
         bridge.inputSource().useScreen(
-                demoPage.getScreen().getWidth(),
-                demoPage.getScreen().getHeight(),
-                demoPage.getScreen().getCursorSpeed());
+                page.getScreen().getWidth(),
+                page.getScreen().getHeight(),
+                page.getScreen().getCursorSpeed());
 
         final Runnable mount = () -> {
             bridge.inputSource().resetMapper(id);
@@ -234,7 +238,7 @@ public final class Server {
 
             final UiSession session = new UiSession(
                     id,
-                    demoPage,
+                    page,
                     renderer,
                     effects,
                     new dev.shadr.core.action.ActionRunner(new LoggingActionHost()),
@@ -242,15 +246,33 @@ public final class Server {
                     placeholdersFor(id));
             sessions.put(id.getUuid(), session);
             bridge.hud().apply(id, session.draws());
-            startStreamIfNeeded(id);
-            System.out.println("[shadr] UI open for " + player.getUsername());
+            startStreamIfNeeded(id, page);
+            System.out.println("[shadr] UI open for " + player.getUsername()
+                    + " on page '" + page.getName() + "'");
         };
 
-        if (demoPage.getScreen().getLocksCamera()) {
+        if (page.getScreen().getLocksCamera()) {
             bridge.cameraControl().start(id, mount::run);
         } else {
             mount.run();
         }
+    }
+
+    /** Opens {@code name}, switching in place when the player already has a session up. */
+    private static void openPageFor(Player player, String name) {
+        final Page target = pages.get(name);
+        if (target == null) {
+            player.sendMessage(Component.text(
+                    "shadr: no page '" + name + "'. pages: " + String.join(", ", pages.keySet())));
+            return;
+        }
+        final PlayerId id = new PlayerId(player.getUuid().toString());
+        if (sessions.containsKey(id.getUuid())) {
+            switchPage(id, name);
+        } else {
+            openUi(player, target);
+        }
+        player.sendMessage(Component.text("shadr: opened '" + name + "'."));
     }
 
     static void switchPage(PlayerId player, String name) {
@@ -262,6 +284,10 @@ public final class Server {
         final UiSession session = sessions.get(player.getUuid());
         if (session == null) return;
 
+        // Audio tracks and streams belong to the outgoing page; nothing else would stop them.
+        stopAudio(player, session.getCurrentPage());
+        bridge.streamSink().stop(player);
+
         bridge.inputSource().useScreen(
                 next.getScreen().getWidth(),
                 next.getScreen().getHeight(),
@@ -272,6 +298,7 @@ public final class Server {
         System.out.println("[shadr] switched to page '" + name + "' (hud="
                 + next.getScreen().getHud() + ")");
         applyCameraFor(player, next, () -> bridge.hud().apply(player, session.draws()));
+        startStreamIfNeeded(player, next);
     }
 
     private static dev.shadr.core.page.PlaceholderResolver placeholdersFor(PlayerId id) {
@@ -352,8 +379,8 @@ public final class Server {
         final PlayerId id = new PlayerId(player.getUuid().toString());
         if (textCapture != null) textCapture.release(player);
         bridge.streamSink().stop(id);
-        sessions.remove(id.getUuid());
-        stopAudio(id);
+        final UiSession closing = sessions.remove(id.getUuid());
+        if (closing != null) stopAudio(id, closing.getCurrentPage());
         bridge.forget(id);
     }
 
@@ -380,9 +407,8 @@ public final class Server {
         return null;
     }
 
-    private static void startStreamIfNeeded(PlayerId id) {
-        if (demoPage == null) return;
-        for (dev.shadr.core.page.Element element : demoPage.getElements()) {
+    private static void startStreamIfNeeded(PlayerId id, Page page) {
+        for (dev.shadr.core.page.Element element : page.getElements()) {
             if (element.getType() != dev.shadr.core.page.ElementType.VIDEO) continue;
             if (!element.getStream() || !element.getEnabled()) continue;
             final String clip = element.getItem();
@@ -453,16 +479,38 @@ public final class Server {
         manager.register(stream);
 
         final var ui = new Command("ui");
+        // Read off the live map so pages the editor adds mid-session complete too.
+        final var pageArgument = ArgumentType.Word("page")
+                .setSuggestionCallback((sender, ctx, suggestion) -> {
+                    for (String name : pages.keySet()) {
+                        suggestion.addEntry(new SuggestionEntry(name));
+                    }
+                });
+
         ui.setDefaultExecutor((sender, ctx) -> {
-            if (!(sender instanceof Player player)) return;
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(Component.text("players only."));
+                return;
+            }
             if (sessions.containsKey(player.getUuid().toString())) {
                 closeUi(player);
                 player.sendMessage(Component.text("shadr: UI closed."));
+            } else if (DEFAULT_PAGE != null) {
+                openPageFor(player, DEFAULT_PAGE);
             } else {
-                openUi(player);
-                player.sendMessage(Component.text("shadr: UI open."));
+                player.sendMessage(Component.text(
+                        "shadr: /ui <page> to open one, /ui again to close. pages: "
+                                + String.join(", ", pages.keySet())));
             }
         });
+
+        ui.addSyntax((sender, ctx) -> {
+            if (!(sender instanceof Player player)) {
+                sender.sendMessage(Component.text("players only."));
+                return;
+            }
+            openPageFor(player, ctx.get(pageArgument));
+        }, pageArgument);
         manager.register(ui);
 
         final var editor = new Command("editor");
@@ -549,7 +597,6 @@ public final class Server {
                         REPO_ROOT.resolve("protocol/effects").toFile()),
                 edited -> {
                     pages.put(edited.getName(), edited);
-                    if (edited.getName().equals(PAGE_NAME)) demoPage = edited;
                     for (Map.Entry<String, UiSession> open : sessions.entrySet()) {
                         if (!open.getValue().getCurrentPage().getName().equals(edited.getName())) continue;
                         open.getValue().refreshPage(edited);
@@ -572,10 +619,8 @@ public final class Server {
                 });
     }
 
-    static final String SELECTOR_PAGE = "__pages";
-
-    private static final String PAGE_NAME =
-            System.getenv().getOrDefault("SHADR_PAGE", SELECTOR_PAGE);
+    /** Page a bare /ui opens. Unset means /ui lists the pages instead of guessing one. */
+    private static final String DEFAULT_PAGE = System.getenv("SHADR_PAGE");
 
     private static final Map<String, Page> pages = new java.util.LinkedHashMap<>();
 
@@ -587,112 +632,17 @@ public final class Server {
         effects = loader.loadEffects();
 
         pages.clear();
-        final Map<String, Page> loaded = new java.util.TreeMap<>(loader.loadPages(loader.loadComponents()));
-        pages.putAll(loaded);
+        pages.putAll(new java.util.TreeMap<>(loader.loadPages(loader.loadComponents())));
         loader.getIssues().forEach(issue -> System.out.println("[shadr] page issue: " + issue));
         if (pages.isEmpty()) throw new IllegalStateException("protocol/pages has no loadable page");
 
-        pages.put(SELECTOR_PAGE, selectorPage(loaded.keySet(), screenTemplate(loaded)));
-
-        demoPage = pages.get(PAGE_NAME);
-        if (demoPage == null) {
-            throw new IllegalStateException("no page named '" + PAGE_NAME + "'; have " + pages.keySet());
+        if (DEFAULT_PAGE != null && !pages.containsKey(DEFAULT_PAGE)) {
+            throw new IllegalStateException(
+                    "SHADR_PAGE names '" + DEFAULT_PAGE + "'; have " + pages.keySet());
         }
         renderer = new PageRenderer();
-        System.out.println("[shadr] " + loaded.size() + " page(s) loaded: " + loaded.keySet());
-        System.out.println("[shadr] page '" + PAGE_NAME + "': "
-                + demoPage.getElements().size() + " element(s)");
+        System.out.println("[shadr] " + pages.size() + " page(s) loaded: " + pages.keySet());
     }
-
-    private static dev.shadr.core.page.ScreenDef screenTemplate(java.util.Map<String, Page> loaded) {
-        for (Page page : loaded.values()) return page.getScreen();
-        return new dev.shadr.core.page.ScreenDef();
-    }
-
-    private static Page selectorPage(
-            java.util.Collection<String> names, dev.shadr.core.page.ScreenDef screen) {
-        final List<Object> blocks = new java.util.ArrayList<>();
-
-        blocks.add(map(
-                "type", "block",
-                "id", "selector_dim",
-                "layer", 0.0,
-                "color", "08080b",
-                "opacity", 220,
-                "position", map("x", 0, "y", 0),
-                "size", map("width", (int) screen.getWidth(), "height", (int) screen.getHeight())));
-
-        blocks.add(map(
-                "type", "text",
-                "id", "selector_title",
-                "layer", 20.0,
-                "color", "e8e8f0",
-                "text", "shadr pages",
-                "font", "shadr_semibold",
-                "position", map("x", "halfWidth", "y", 140),
-                "size", map("width", 44, "height", 44),
-                "textAlign", "center"));
-
-        final int columns = names.size() > ROWS_PER_COLUMN ? 2 : 1;
-        final int rows = (names.size() + columns - 1) / columns;
-        int index = 0;
-        for (String name : names) {
-            final int column = index / rows;
-            final int row = index % rows;
-            final double offset = (column - (columns - 1) / 2.0) * (BUTTON_W + 30) - BUTTON_W / 2.0;
-            final String x = offset < 0
-                    ? "halfWidth - " + (-offset)
-                    : "halfWidth + " + offset;
-            final int y = 230 + row * (BUTTON_H + 14);
-
-            blocks.add(map(
-                    "type", "block_rounded",
-                    "id", "page_" + name,
-                    "layer", 10.0,
-                    "color", "1b1b24",
-                    "position", map("x", x, "y", y),
-                    "size", map("width", BUTTON_W, "height", BUTTON_H),
-                    "rounding", map("size", "small"),
-                    "outline", map("size", 1, "color", "2a2a36"),
-                    "hoverEffect", "lift",
-                    "clickEffect", "press",
-                    "onClickAction", List.of("sound: shadr.click", "redirect: " + name)));
-
-            blocks.add(map(
-                    "type", "text",
-                    "id", "page_" + name + "_label",
-                    "layer", 20.0,
-                    "color", "e8e8f0",
-                    "text", name,
-                    "position", map("x", labelX(offset), "y", y + BUTTON_H / 2.0 - 4),
-                    "size", map("width", 24, "height", 24),
-                    "textAlign", "center",
-                    "disableHitbox", true));
-            index++;
-        }
-
-        final dev.shadr.core.page.TemplateResolver resolver = new dev.shadr.core.page.TemplateResolver();
-        final List<dev.shadr.core.page.Element> elements = resolver.resolve(blocks, screen);
-        resolver.getIssues().forEach(issue -> System.out.println("[shadr] selector issue: " + issue));
-        return new Page(SELECTOR_PAGE, screen, elements, List.of());
-    }
-
-    private static String labelX(double offset) {
-        final double centre = offset + BUTTON_W / 2.0;
-        return centre < 0 ? "halfWidth - " + (-centre) : "halfWidth + " + centre;
-    }
-
-    private static Map<String, Object> map(Object... pairs) {
-        final Map<String, Object> out = new java.util.LinkedHashMap<>();
-        for (int i = 0; i < pairs.length; i += 2) out.put((String) pairs[i], pairs[i + 1]);
-        return out;
-    }
-
-    private static final int BUTTON_W = 280;
-
-    private static final int BUTTON_H = 44;
-
-    private static final int ROWS_PER_COLUMN = 9;
 
     private static final class LoggingActionHost implements dev.shadr.core.action.ActionHost {
         @Override public void runAsPlayer(PlayerId player, String command) { log("command", command); }
@@ -801,10 +751,11 @@ public final class Server {
 
     private static String videoCacheKey = null;
 
+    /** Clips any page streams. The pack skips baking these, and /ui can open any page. */
     private static java.util.Set<String> streamedClipIds() {
         final java.util.Set<String> ids = new java.util.HashSet<>();
-        if (demoPage != null) {
-            for (dev.shadr.core.page.Element element : demoPage.getElements()) {
+        for (Page page : pages.values()) {
+            for (dev.shadr.core.page.Element element : page.getElements()) {
                 if (element.getType() == dev.shadr.core.page.ElementType.VIDEO
                         && element.getStream() && element.getItem() != null) {
                     ids.add(element.getItem().toLowerCase(java.util.Locale.ROOT));

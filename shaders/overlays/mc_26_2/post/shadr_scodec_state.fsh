@@ -59,10 +59,10 @@ void main() {
         windowStart = now;
     }
 
-    int packed = int(round(windowStart * 65535.0));
+    int packedBits = int(round(windowStart * 65535.0));
     fragColor = vec4(
         float(count) / 255.0,
         float(min(shown, 255)) / 255.0,
-        float(packed & 0xFF) / 255.0,
-        float((packed >> 8) & 0xFF) / 255.0);
+        float(packedBits & 0xFF) / 255.0,
+        float((packedBits >> 8) & 0xFF) / 255.0);
 }
